@@ -73,7 +73,7 @@
 
   <div class="panel">
     <label><input type="checkbox" id="voiceOn" checked> 🔊 Voice assistant ON</label><br>
-    <small>Tip: phone ah side angle la vechu, full body (head to feet) theriyura mari 1.5–2m dhooram la nilunga.</small>
+    <small>Tip: phone ah side angle la vechu, full body (head to feet) theriyura mari 1.5–2m dhooram la nilunga. Push-up ku phone ah tharalayila vechu side view la vainga.</small>
   </div>
 
   <div class="panel" id="summary"></div>
@@ -90,6 +90,12 @@ let landmarker, running = false, startTime = 0, lastVideoTime = -1;
 // ---------- Rep / form state ----------
 let reps = 0, stage = "up", minAngle = 999, repIssues = new Set();
 let scores = [], lastSpoken = "", lastSpokenAt = 0, lastDegradeAlertRep = -10;
+let lockedSide = null, smAng = null, lastRepTime = 0, stageTime = 0;
+
+function resetTracking() {
+  lockedSide = null; smAng = null; stage = "up"; minAngle = 999;
+  repIssues = new Set(); lastRepTime = 0; stageTime = 0;
+}
 
 // ---------- Helpers ----------
 const deg = r => r * 180 / Math.PI;
@@ -113,17 +119,25 @@ function setBanner(msg, good) {
 
 // ---------- Exercise logic ----------
 const CFG = {
-  squat: { down: 100, up: 160, depthMax: 110, depthMsg: "Go deeper" },
-  pushup: { down: 90, up: 160, depthMax: 100, depthMsg: "Go lower" },
-  curl:  { down: 150, up: 40, depthMax: 55,  depthMsg: "Curl higher", inverted: true }
+  squat:  { down: 100, up: 160, depthMax: 110, depthMsg: "Go deeper" },
+  pushup: { down: 95,  up: 150, depthMax: 105, depthMsg: "Go lower" },
+  curl:   { down: 150, up: 40,  depthMax: 55,  depthMsg: "Curl higher", inverted: true }
 };
+const MIN_REP_MS = 800;
 
 function analyze(lm, ex) {
   const L = { s:11, e:13, w:15, h:23, k:25, a:27 }, R = { s:12, e:14, w:16, h:24, k:26, a:28 };
   const vis = S => (lm[S.s].visibility + lm[S.h].visibility + lm[S.k].visibility + lm[S.e].visibility) / 4;
-  const S = vis(L) >= vis(R) ? L : R;
+
+  // lock the side once so left/right never flips mid-exercise
+  if (!lockedSide) {
+    if (vis(L) < 0.5 && vis(R) < 0.5) return { ok:false };
+    lockedSide = vis(L) >= vis(R) ? "L" : "R";
+  }
+  const S = lockedSide === "L" ? L : R;
   const P = k => lm[S[k]];
-  if (vis(S) < 0.5) return { ok:false };
+  const need = ex === "squat" ? ["h","k","a"] : ["s","e","w"];
+  if (need.some(k => P(k).visibility < 0.5)) return { ok:false };
 
   const issues = [];
   let ang;
@@ -135,11 +149,13 @@ function analyze(lm, ex) {
     }
   } else if (ex === "pushup") {
     ang = angle(P("s"), P("e"), P("w"));
-    const body = angle(P("s"), P("h"), P("a"));
-    if (body < 155) issues.push("Keep your body straight");
+    if (P("h").visibility > 0.5 && P("a").visibility > 0.5) {
+      const body = angle(P("s"), P("h"), P("a"));
+      if (body < 155) issues.push("Keep your body straight");
+    }
   } else {
     ang = angle(P("s"), P("e"), P("w"));
-    if (ang < 120) {
+    if (ang < 120 && P("h").visibility > 0.5) {
       const drift = angle(P("e"), P("s"), P("h"));
       if (drift > 35) issues.push("Keep your elbow close");
     }
@@ -150,8 +166,7 @@ function analyze(lm, ex) {
 function finishRep(ex) {
   const c = CFG[ex];
   let penalty = repIssues.size * 15;
-  const shallow = minAngle > c.depthMax;
-  if (shallow) { repIssues.add(c.depthMsg); penalty += 20; }
+  if (minAngle > c.depthMax) { repIssues.add(c.depthMsg); penalty += 20; }
   const sc = Math.max(0, 100 - penalty);
   reps++; scores.push(sc);
   $("reps").textContent = reps; $("score").textContent = sc;
@@ -204,15 +219,28 @@ function loop() {
 
       if (!r.ok) { setBanner("Full body camera la varura mari nillunga", false); }
       else {
+        // smooth the angle to remove jitter
+        smAng = smAng === null ? r.ang : 0.4 * r.ang + 0.6 * smAng;
+        const a = smAng, now = Date.now();
+
         r.issues.forEach(i => repIssues.add(i));
         if (r.issues.length) { setBanner(r.issues[0], false); speak(r.issues[0]); }
-        minAngle = Math.min(minAngle, r.ang);
+        minAngle = Math.min(minAngle, a);
+
         if (!c.inverted) {
-          if (r.ang < c.down) stage = "down";
-          if (r.ang > c.up && stage === "down") { stage = "up"; finishRep(ex); }
+          if (a < c.down && stage === "up") { stage = "down"; stageTime = now; }
+          if (a > c.up && stage === "down") {
+            stage = "up";
+            if (now - lastRepTime > MIN_REP_MS && now - stageTime > 250) { lastRepTime = now; finishRep(ex); }
+            else { minAngle = 999; repIssues = new Set(); }
+          }
         } else {
-          if (r.ang < c.up) stage = "curled";
-          if (r.ang > c.down && stage === "curled") { stage = "up"; finishRep(ex); }
+          if (a < c.up && stage === "up") { stage = "curled"; stageTime = now; }
+          if (a > c.down && stage === "curled") {
+            stage = "up";
+            if (now - lastRepTime > MIN_REP_MS && now - stageTime > 250) { lastRepTime = now; finishRep(ex); }
+            else { minAngle = 999; repIssues = new Set(); }
+          }
         }
       }
     }
@@ -235,7 +263,7 @@ async function start() {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 }, audio: false });
     video.srcObject = stream; await video.play();
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    reps = 0; scores = []; stage = "up"; minAngle = 999; repIssues = new Set(); lastDegradeAlertRep = -10;
+    reps = 0; scores = []; lastDegradeAlertRep = -10; resetTracking();
     $("reps").textContent = 0; $("score").textContent = "--"; $("bars").innerHTML = ""; $("degrade").innerHTML = "";
     $("summary").style.display = "none";
     startTime = Date.now(); running = true;
@@ -262,6 +290,7 @@ function finish() {
   speak("Session finished. Total reps " + reps, true);
 }
 
+$("exercise").onchange = resetTracking;
 $("startBtn").onclick = start;
 $("finishBtn").onclick = finish;
 </script>
