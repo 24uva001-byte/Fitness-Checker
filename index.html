@@ -18,7 +18,6 @@
   .btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--gold)}
   .btn:disabled{opacity:.5}
   .icon-btn{border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:10px;padding:8px 11px;font-size:1rem;cursor:pointer}
-  /* auth */
   #auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
   .auth-card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;text-align:center}
   .logo{font-size:2.4rem}
@@ -26,7 +25,6 @@
   .tab{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--txt);font-weight:600}
   .tab.active{background:var(--gold);color:#1a1405;border-color:var(--gold)}
   .msg{min-height:1.2em;font-size:.85rem;color:var(--bad);margin:8px 0 0}
-  /* app */
   .top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line)}
   .brand{flex:1;font-weight:800;color:var(--gold)}
   main{max-width:760px;margin:0 auto;padding:14px}
@@ -34,7 +32,6 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
   .card h3{margin:0 0 10px;font-size:1rem;color:var(--gold)}
   .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
-  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 4px;text-align:center}
   .stat b{display:block;font-size:1.4rem;color:var(--gold)}
   .stat span{font-size:.65rem;color:var(--mut)}
@@ -70,7 +67,6 @@
 </head>
 <body>
 
-<!-- ================= AUTH ================= -->
 <section id="auth">
   <div class="auth-card">
     <div class="logo">💪</div>
@@ -92,7 +88,6 @@
   </div>
 </section>
 
-<!-- ================= APP ================= -->
 <div id="app" hidden>
   <header class="top">
     <div class="brand">💪 FitForm AI</div>
@@ -101,7 +96,6 @@
   </header>
 
   <main>
-    <!-- HOME -->
     <section class="page active" id="page-home">
       <h2 id="hello" style="margin:4px 0 12px">Hi 👋</h2>
       <div class="grid4">
@@ -128,7 +122,6 @@
       </div>
     </section>
 
-    <!-- WORKOUT -->
     <section class="page" id="page-workout">
       <div class="chips" id="chips"></div>
       <p class="mut small" id="exHint" style="margin:0 0 8px"></p>
@@ -161,7 +154,6 @@
       <div class="card" id="summary" hidden></div>
     </section>
 
-    <!-- HISTORY -->
     <section class="page" id="page-history">
       <div class="card">
         <h3>📜 Workout history</h3>
@@ -173,7 +165,6 @@
       </div>
     </section>
 
-    <!-- PROGRESS -->
     <section class="page" id="page-progress">
       <select id="progEx"></select>
       <div class="grid4" style="grid-template-columns:repeat(3,1fr)">
@@ -185,7 +176,6 @@
       <div class="card"><h3>📊 Reps – last 7 days</h3><div id="chartReps"></div></div>
     </section>
 
-    <!-- ABOUT -->
     <section class="page" id="page-about">
       <div class="card">
         <h3>ℹ️ About FitForm AI</h3>
@@ -229,8 +219,8 @@
 </div>
 
 <script type="module">
-import { PoseLandmarker, FilesetResolver, DrawingUtils }
-  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+// MediaPipe is loaded only when a workout starts, so login/UI never depends on it
+let PoseLandmarker, FilesetResolver, DrawingUtils;
 
 const $ = id => document.getElementById(id);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -239,10 +229,10 @@ const store = {
   set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
 };
 
+const MP_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const WASM  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
-// ---------------- Exercises ----------------
 const EX = {
   squat:  { name:"Squat",          icon:"🏋️", hint:"Side view · knee angle",        down:100, up:160, depthMax:110, depthMsg:"Go deeper", kcal:.32, def:10 },
   pushup: { name:"Push-up",        icon:"🤸", hint:"Side view · elbow angle",       down:95,  up:150, depthMax:105, depthMsg:"Go lower",  kcal:.32, def:10 },
@@ -360,7 +350,7 @@ function resetUI(){
 
 // ---------------- Workout state ----------------
 const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
-const du = new DrawingUtils(ctx);
+let du = null;
 let landmarker, running = false, rafId = 0, startTime = 0, lastVideoTime = -1, wl = null;
 let count = 0, stage = "up", minAngle = 999, repIssues = new Set(), scores = [];
 let lockedSide = null, smAng = null, lastRepTime = 0, stageTime = 0;
@@ -373,7 +363,6 @@ function resetTracking(){
   holdMs = 0; lastFrameT = 0; winFrames = 0; winBad = 0; winStart = Date.now(); lastDegradeAlertRep = -10;
 }
 
-// ---------------- Helpers ----------------
 const deg = r => r * 180 / Math.PI;
 function angle(a, b, c){
   const r = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
@@ -512,4 +501,212 @@ function drawBars(){
 }
 function degradeState(){
   if (scores.length < 4) return false;
-  const avg = a => a.red
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  return avg(scores.slice(0, 2)) - avg(scores.slice(-2)) >= 15;
+}
+function checkDegradation(){
+  const bad = degradeState();
+  $("degrade").innerHTML = bad
+    ? '<span class="warn">⚠ Form degradation detected – form getting worse due to fatigue</span>'
+    : (scores.length >= 4 ? "✅ Form is stable" : '<span class="mut small">Form trend needs 4+ scores</span>');
+  if (bad && count - lastDegradeAlertRep >= 3) {
+    lastDegradeAlertRep = count;
+    setTimeout(() => speak("Your form is getting worse. Take a short rest.", true), 1500);
+  }
+}
+
+// ---------------- Main loop ----------------
+function loop(){
+  if (!running) return;
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const now = Date.now(), dt = lastFrameT ? now - lastFrameT : 0; lastFrameT = now;
+    const res = landmarker.detectForVideo(video, performance.now());
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (res.landmarks && res.landmarks.length) {
+      const lm = res.landmarks[0], c = EX[curEx];
+      const r = analyze(lm, curEx);
+      du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: r.ok && r.issues.length ? "#ff5d5d" : "#4cd37b", lineWidth: 3 });
+      du.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
+      if (!r.ok) setBanner("Full body camera la varura mari nillunga", false);
+      else if (c.timed) handlePlank(r, dt, now, c);
+      else handleReps(r, c, now);
+    }
+    $("time").textContent = Math.round((Date.now() - startTime) / 1000) + "s";
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+// ---------------- Start / Finish ----------------
+async function loadModel(){
+  if (!PoseLandmarker) {
+    const mp = await import(MP_URL);
+    PoseLandmarker = mp.PoseLandmarker; FilesetResolver = mp.FilesetResolver; DrawingUtils = mp.DrawingUtils;
+  }
+  du = new DrawingUtils(ctx);
+  const fileset = await FilesetResolver.forVisionTasks(WASM);
+  const mk = d => PoseLandmarker.createFromOptions(fileset, { baseOptions:{ modelAssetPath: MODEL, delegate: d }, runningMode:"VIDEO", numPoses:1 });
+  try { landmarker = await mk("GPU"); } catch(e){ landmarker = await mk("CPU"); }
+}
+
+async function start(){
+  if (running) return;
+  $("startBtn").disabled = true; setBanner("Loading AI model… (internet venum)", true);
+  try {
+    if (!landmarker) await loadModel();
+    const facing = $("facing").value;
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: facing, width:{ ideal:640 }, height:{ ideal:480 } }, audio:false });
+    $("stage").classList.toggle("mirror", facing === "user");
+    video.srcObject = stream; await video.play();
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    resetTracking(); resetUI();
+    startTime = Date.now(); running = true; lastVideoTime = -1;
+    lockScreen();
+    setBanner("Ready! Start exercise 💪", true); speak("Ready. Start your exercise.", true);
+    loop();
+  } catch(e){
+    console.error(e); setBanner("Error: " + e.message + " – internet check pannitu retry pannunga", false);
+    $("startBtn").disabled = false;
+  }
+}
+
+function finish(){
+  if (!running) return;
+  running = false; cancelAnimationFrame(rafId); unlockScreen();
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+  video.srcObject = null; ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $("startBtn").disabled = false;
+
+  const c = EX[curEx], dur = Math.round((Date.now() - startTime) / 1000);
+  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const deg_ = degradeState(), kcal = +(count * c.kcal).toFixed(1);
+  const top = Object.entries(issueCount).sort((a, b) => b[1] - a[1])[0];
+  const unit = c.timed ? "s hold" : " reps";
+  const s = $("summary"); s.hidden = false;
+
+  if (count > 0) {
+    const h = store.get("afc_h_" + user, []);
+    h.push({ t: Date.now(), ex: curEx, reps: count, score: avg, dur, deg: deg_, kcal });
+    setHist(h);
+    s.innerHTML = `<h3>Session Summary</h3>
+      ${c.icon} <b>${c.name}</b><br>
+      Result: <b>${count}${unit}</b><br>
+      Average form score: <b>${avg}/100</b><br>
+      Time: <b>${dur}s</b> · ~<b>${kcal}</b> kcal<br>
+      Form degradation: <b>${deg_ ? "Yes ⚠" : "No ✅"}</b><br>
+      ${top ? `Top correction: <b>${top[0]}</b>` : "Perfect form, no corrections 🎉"}
+      <p class="mut small" style="margin-bottom:0">Saved to History ✔</p>`;
+    setBanner("Session finished 🎉", true);
+    speak("Session finished. " + count + (c.timed ? " seconds" : " reps"), true);
+  } else {
+    s.innerHTML = '<h3>Session Summary</h3>No reps detected, so this session was not saved. Try side view with full body visible.';
+    setBanner("No reps detected", false);
+  }
+}
+
+// ---------------- Home ----------------
+function streakDays(h){
+  const days = new Set(h.map(s => new Date(s.t).toDateString()));
+  let n = 0; const d = new Date();
+  if (!days.has(d.toDateString())) d.setDate(d.getDate() - 1);
+  while (days.has(d.toDateString())) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+const fmtDate = t => new Date(t).toLocaleString([], { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+const sessionRow = (s, del) => {
+  const c = EX[s.ex];
+  return `<div class="item"><div style="font-size:1.5rem">${c.icon}</div>
+    <div style="flex:1"><b>${c.name}</b> <span class="badge ${s.deg ? "warn" : ""}">${s.deg ? "Fatigue ⚠" : "Stable ✓"}</span><br>
+    <small class="mut">${fmtDate(s.t)} · ${s.reps}${c.timed ? "s hold" : " reps"} · score ${s.score} · ${s.dur}s</small></div>
+    ${del ? `<button class="icon-btn" data-del="${s.t}">🗑</button>` : ""}</div>`;
+};
+
+function renderHome(){
+  const p = profile(), h = hist();
+  $("hello").textContent = "Hi, " + p.name + " 👋";
+  const reps = h.filter(s => !EX[s.ex].timed).reduce((a, s) => a + s.reps, 0);
+  $("sSessions").textContent = h.length;
+  $("sReps").textContent = reps;
+  $("sAvg").textContent = h.length ? Math.round(h.reduce((a, s) => a + s.score, 0) / h.length) : "--";
+  $("sStreak").textContent = streakDays(h);
+  const today = new Date().toDateString();
+  const tr = h.filter(s => !EX[s.ex].timed && new Date(s.t).toDateString() === today).reduce((a, s) => a + s.reps, 0);
+  const goal = p.goal || 30;
+  $("goalBar").style.width = Math.min(100, Math.round(tr / goal * 100)) + "%";
+  $("goalTxt").textContent = tr + " / " + goal + " reps today" + (tr >= goal ? " 🎉" : "");
+  $("goalInput").value = goal;
+  const rec = h.slice(-3).reverse();
+  $("recent").innerHTML = rec.length ? rec.map(s => sessionRow(s, false)).join("") : '<p class="mut small">No sessions yet. Start your first workout 💪</p>';
+}
+$("goalInput").addEventListener("change", () => {
+  const p = profile(); p.goal = Math.max(5, Math.min(500, +$("goalInput").value || 30));
+  store.set("afc_p_" + user, p); renderHome();
+});
+
+// ---------------- History ----------------
+function renderHistory(){
+  const h = hist().slice().reverse();
+  $("histList").innerHTML = h.length ? h.map(s => sessionRow(s, true)).join("") : '<p class="mut small">No sessions yet.</p>';
+}
+$("histList").addEventListener("click", e => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  setHist(store.get("afc_h_" + user, []).filter(s => String(s.t) !== b.dataset.del));
+  renderHistory();
+});
+$("clearBtn").onclick = () => { if (confirm("Delete all workout history?")) { setHist([]); renderHistory(); } };
+$("csvBtn").onclick = () => {
+  const h = hist();
+  if (!h.length) { alert("No data to export yet"); return; }
+  const rows = ["date,exercise,reps_or_seconds,score,duration_s,fatigue,kcal"]
+    .concat(h.map(s => [new Date(s.t).toISOString(), EX[s.ex].name, s.reps, s.score, s.dur, s.deg ? "yes" : "no", s.kcal].join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type:"text/csv" }));
+  a.download = "fitform-history.csv"; a.click();
+};
+
+// ---------------- Progress ----------------
+function lineChart(vals){
+  if (vals.length < 2) return '<p class="mut small">Do at least 2 sessions to see your trend.</p>';
+  const W = 320, H = 130, p = 22, step = (W - 2 * p) / (vals.length - 1);
+  const pts = vals.map((v, i) => [p + i * step, H - p - (v / 100) * (H - 2 * p)]);
+  const grid = [0, 50, 100].map(g => {
+    const y = H - p - (g / 100) * (H - 2 * p);
+    return `<line x1="${p}" x2="${W - p}" y1="${y}" y2="${y}" style="stroke:var(--line)"/><text x="0" y="${y + 3}" font-size="9" style="fill:var(--mut)">${g}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}">${grid}
+    <polyline points="${pts.map(q => q.join(",")).join(" ")}" fill="none" stroke-width="2.5" style="stroke:var(--gold)"/>
+    ${pts.map(q => `<circle cx="${q[0]}" cy="${q[1]}" r="3.5" style="fill:var(--gold)"/>`).join("")}</svg>`;
+}
+function barChart(h, incl){
+  const days = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d); }
+  const vals = days.map(d => h.filter(s => incl(s) && new Date(s.t).toDateString() === d.toDateString()).reduce((a, s) => a + s.reps, 0));
+  const W = 320, H = 130, bw = 28, gap = (W - 7 * bw) / 8, max = Math.max(10, ...vals);
+  const L = ["S", "M", "T", "W", "T", "F", "S"];
+  return `<svg viewBox="0 0 ${W} ${H}">` + vals.map((v, i) => {
+    const x = gap + i * (bw + gap), ht = v / max * (H - 40), y = H - 20 - ht;
+    return `<rect x="${x}" y="${y}" width="${bw}" height="${ht}" rx="5" style="fill:var(--gold)"/>
+      <text x="${x + bw / 2}" y="${y - 4}" font-size="10" text-anchor="middle" style="fill:var(--txt)">${v || ""}</text>
+      <text x="${x + bw / 2}" y="${H - 5}" font-size="10" text-anchor="middle" style="fill:var(--mut)">${L[days[i].getDay()]}</text>`;
+  }).join("") + "</svg>";
+}
+function renderProgress(){
+  const f = $("progEx").value;
+  const all = hist(), h = f === "all" ? all : all.filter(s => s.ex === f);
+  $("pSessions").textContent = h.length;
+  $("pBest").textContent = h.length ? Math.max(...h.map(s => s.score)) : "--";
+  $("pMax").textContent = h.length ? Math.max(...h.map(s => s.reps)) : "--";
+  $("chartScore").innerHTML = lineChart(h.slice(-10).map(s => s.score));
+  $("chartReps").innerHTML = barChart(all, s => f === "all" ? !EX[s.ex].timed : s.ex === f);
+}
+$("progEx").onchange = renderProgress;
+
+// ---------------- Buttons + boot ----------------
+$("startBtn").onclick = start;
+$("finishBtn").onclick = finish;
+
+buildExUI();
+const saved = store.get("afc_session", null);
+if (saved && (saved === "guest" || store.get("afc_users", {})[saved])) enterApp(saved);
+</script>
+</body>
+</html>
