@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Fitness Form Checker</title>
+<style>
+  :root { --bg:#14110b; --card:#241f14; --gold:#c9a24a; --txt:#f4efe3; --good:#4cd37b; --bad:#ff5d5d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Arial,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:14px 16px; text-align:center; border-bottom:1px solid #3a321f; }
+  header h1 { margin:0; font-size:1.15rem; color:var(--gold); }
+  header p { margin:4px 0 0; font-size:.8rem; opacity:.7; }
+  main { max-width:760px; margin:0 auto; padding:12px; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  select, button { padding:10px 14px; border-radius:10px; border:0; font-size:1rem; }
+  select { background:var(--card); color:var(--txt); flex:1; min-width:140px; }
+  button { background:var(--gold); color:#1a1405; font-weight:700; }
+  button.alt { background:var(--card); color:var(--txt); border:1px solid var(--gold); }
+  .stage { position:relative; width:100%; background:#000; border-radius:14px; overflow:hidden; aspect-ratio:3/4; }
+  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  .banner { position:absolute; left:8px; right:8px; bottom:8px; padding:10px; border-radius:10px;
+            background:rgba(0,0,0,.65); text-align:center; font-weight:700; font-size:1.05rem; }
+  .banner.good { color:var(--good); } .banner.bad { color:var(--bad); }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:10px 0; }
+  .card { background:var(--card); border-radius:12px; padding:10px; text-align:center; }
+  .card b { display:block; font-size:1.7rem; color:var(--gold); }
+  .card span { font-size:.75rem; opacity:.75; }
+  .panel { background:var(--card); border-radius:12px; padding:12px; margin-bottom:10px; }
+  .panel h3 { margin:0 0 8px; font-size:.95rem; color:var(--gold); }
+  .bars { display:flex; align-items:flex-end; gap:4px; height:90px; }
+  .bar { flex:1; min-width:6px; border-radius:4px 4px 0 0; background:var(--good); position:relative; }
+  .bar.mid { background:#e7b73c; } .bar.low { background:var(--bad); }
+  .warn { color:var(--bad); font-weight:700; }
+  #summary { display:none; }
+  small { opacity:.65; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Fitness Form Checker</h1>
+  <p>Pose Estimation (MediaPipe) · Rep Counter · Form Degradation · Voice Assistant</p>
+</header>
+
+<main>
+  <div class="controls">
+    <select id="exercise">
+      <option value="squat">Squat</option>
+      <option value="pushup">Push-up</option>
+      <option value="curl">Bicep Curl</option>
+    </select>
+    <button id="startBtn">▶ Start</button>
+    <button id="finishBtn" class="alt">Finish</button>
+  </div>
+
+  <div class="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="banner" id="banner">Press Start, allow camera 🎥</div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><b id="reps">0</b><span>REPS</span></div>
+    <div class="card"><b id="score">--</b><span>LAST REP SCORE</span></div>
+    <div class="card"><b id="time">0s</b><span>TIME</span></div>
+  </div>
+
+  <div class="panel">
+    <h3>Rep-by-rep form score</h3>
+    <div class="bars" id="bars"></div>
+    <p id="degrade" style="margin:8px 0 0"></p>
+  </div>
+
+  <div class="panel">
+    <label><input type="checkbox" id="voiceOn" checked> 🔊 Voice assistant ON</label><br>
+    <small>Tip: phone ah side angle la vechu, full body (head to feet) theriyura mari 1.5–2m dhooram la nilunga.</small>
+  </div>
+
+  <div class="panel" id="summary"></div>
+</main>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver, DrawingUtils }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+let landmarker, running = false, startTime = 0, lastVideoTime = -1;
+
+// ---------- Rep / form state ----------
+let reps = 0, stage = "up", minAngle = 999, repIssues = new Set();
+let scores = [], lastSpoken = "", lastSpokenAt = 0, lastDegradeAlertRep = -10;
+
+// ---------- Helpers ----------
+const deg = r => r * 180 / Math.PI;
+function angle(a, b, c) {
+  const r = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+  let d = Math.abs(deg(r)); if (d > 180) d = 360 - d; return d;
+}
+function speak(msg, force = false) {
+  $("banner").textContent = msg;
+  if (!$("voiceOn").checked || !("speechSynthesis" in window)) return;
+  const now = Date.now();
+  if (!force && (now - lastSpokenAt < 3500 || (msg === lastSpoken && now - lastSpokenAt < 8000))) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(msg); u.lang = "en-IN"; u.rate = 1;
+  speechSynthesis.speak(u);
+  lastSpoken = msg; lastSpokenAt = now;
+}
+function setBanner(msg, good) {
+  const b = $("banner"); b.textContent = msg; b.className = "banner " + (good ? "good" : "bad");
+}
+
+// ---------- Exercise logic ----------
+const CFG = {
+  squat: { down: 100, up: 160, depthMax: 110, depthMsg: "Go deeper" },
+  pushup: { down: 90, up: 160, depthMax: 100, depthMsg: "Go lower" },
+  curl:  { down: 150, up: 40, depthMax: 55,  depthMsg: "Curl higher", inverted: true }
+};
+
+function analyze(lm, ex) {
+  const L = { s:11, e:13, w:15, h:23, k:25, a:27 }, R = { s:12, e:14, w:16, h:24, k:26, a:28 };
+  const vis = S => (lm[S.s].visibility + lm[S.h].visibility + lm[S.k].visibility + lm[S.e].visibility) / 4;
+  const S = vis(L) >= vis(R) ? L : R;
+  const P = k => lm[S[k]];
+  if (vis(S) < 0.5) return { ok:false };
+
+  const issues = [];
+  let ang;
+  if (ex === "squat") {
+    ang = angle(P("h"), P("k"), P("a"));
+    if (ang < 130) {
+      const lean = deg(Math.atan2(Math.abs(P("s").x - P("h").x), Math.abs(P("h").y - P("s").y)));
+      if (lean > 55) issues.push("Keep your chest up");
+    }
+  } else if (ex === "pushup") {
+    ang = angle(P("s"), P("e"), P("w"));
+    const body = angle(P("s"), P("h"), P("a"));
+    if (body < 155) issues.push("Keep your body straight");
+  } else {
+    ang = angle(P("s"), P("e"), P("w"));
+    if (ang < 120) {
+      const drift = angle(P("e"), P("s"), P("h"));
+      if (drift > 35) issues.push("Keep your elbow close");
+    }
+  }
+  return { ok:true, ang, issues };
+}
+
+function finishRep(ex) {
+  const c = CFG[ex];
+  let penalty = repIssues.size * 15;
+  const shallow = minAngle > c.depthMax;
+  if (shallow) { repIssues.add(c.depthMsg); penalty += 20; }
+  const sc = Math.max(0, 100 - penalty);
+  reps++; scores.push(sc);
+  $("reps").textContent = reps; $("score").textContent = sc;
+  drawBars(); checkDegradation();
+  if (repIssues.size) speak([...repIssues][0] + ". Rep " + reps);
+  else { setBanner("Rep " + reps + " ✔ Good form", true); speak("Rep " + reps); }
+  minAngle = 999; repIssues = new Set();
+}
+
+function drawBars() {
+  const box = $("bars"); box.innerHTML = "";
+  scores.slice(-20).forEach(s => {
+    const d = document.createElement("div");
+    d.className = "bar " + (s >= 80 ? "" : s >= 55 ? "mid" : "low");
+    d.style.height = Math.max(6, s) + "%"; d.title = s;
+    box.appendChild(d);
+  });
+}
+
+function degradeState() {
+  if (scores.length < 4) return false;
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  return avg(scores.slice(0, 2)) - avg(scores.slice(-2)) >= 15;
+}
+function checkDegradation() {
+  const bad = degradeState();
+  $("degrade").innerHTML = bad
+    ? '<span class="warn">⚠ Form degradation detected – form getting worse due to fatigue</span>'
+    : (scores.length >= 4 ? "✅ Form is stable" : "<small>Form trend needs 4+ reps</small>");
+  if (bad && reps - lastDegradeAlertRep >= 3) {
+    lastDegradeAlertRep = reps;
+    setTimeout(() => speak("Your form is getting worse. Take a short rest.", true), 1500);
+  }
+}
+
+// ---------- Main loop ----------
+function loop() {
+  if (!running) return;
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const res = landmarker.detectForVideo(video, performance.now());
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (res.landmarks && res.landmarks.length) {
+      const lm = res.landmarks[0], ex = $("exercise").value, c = CFG[ex];
+      const r = analyze(lm, ex);
+      const du = new DrawingUtils(ctx);
+      const colour = r.ok && r.issues.length ? "#ff5d5d" : "#4cd37b";
+      du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: colour, lineWidth: 3 });
+      du.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
+
+      if (!r.ok) { setBanner("Full body camera la varura mari nillunga", false); }
+      else {
+        r.issues.forEach(i => repIssues.add(i));
+        if (r.issues.length) { setBanner(r.issues[0], false); speak(r.issues[0]); }
+        minAngle = Math.min(minAngle, r.ang);
+        if (!c.inverted) {
+          if (r.ang < c.down) stage = "down";
+          if (r.ang > c.up && stage === "down") { stage = "up"; finishRep(ex); }
+        } else {
+          if (r.ang < c.up) stage = "curled";
+          if (r.ang > c.down && stage === "curled") { stage = "up"; finishRep(ex); }
+        }
+      }
+    }
+    $("time").textContent = Math.round((Date.now() - startTime) / 1000) + "s";
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------- Start / Finish ----------
+async function start() {
+  $("startBtn").disabled = true; setBanner("Loading AI model…", true);
+  try {
+    if (!landmarker) {
+      const fileset = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+      landmarker = await PoseLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task", delegate: "GPU" },
+        runningMode: "VIDEO", numPoses: 1
+      });
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 }, audio: false });
+    video.srcObject = stream; await video.play();
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    reps = 0; scores = []; stage = "up"; minAngle = 999; repIssues = new Set(); lastDegradeAlertRep = -10;
+    $("reps").textContent = 0; $("score").textContent = "--"; $("bars").innerHTML = ""; $("degrade").innerHTML = "";
+    $("summary").style.display = "none";
+    startTime = Date.now(); running = true;
+    setBanner("Ready! Start exercise 💪", true); speak("Ready. Start your exercise.", true);
+    loop();
+  } catch (e) {
+    console.error(e); setBanner("Camera / model error: " + e.message, false); $("startBtn").disabled = false;
+  }
+}
+
+function finish() {
+  running = false;
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+  $("startBtn").disabled = false;
+  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const s = $("summary"); s.style.display = "block";
+  s.innerHTML = `<h3>Session Summary</h3>
+    Exercise: <b>${$("exercise").selectedOptions[0].text}</b><br>
+    Total reps: <b>${reps}</b><br>
+    Average form score: <b>${avg}/100</b><br>
+    Time: <b>${$("time").textContent}</b><br>
+    Form degradation: <b>${degradeState() ? "Yes ⚠" : "No ✅"}</b>`;
+  setBanner("Session finished 🎉", true);
+  speak("Session finished. Total reps " + reps, true);
+}
+
+$("startBtn").onclick = start;
+$("finishBtn").onclick = finish;
+</script>
+</body>
+</html>
