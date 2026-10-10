@@ -3,107 +3,384 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Fitness Form Checker</title>
+<meta name="theme-color" content="#14110b">
+<title>FitForm AI – Form Checker</title>
 <style>
-  :root { --bg:#14110b; --card:#241f14; --gold:#c9a24a; --txt:#f4efe3; --good:#4cd37b; --bad:#ff5d5d; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,Arial,sans-serif; background:var(--bg); color:var(--txt); }
-  header { padding:14px 16px; text-align:center; border-bottom:1px solid #3a321f; }
-  header h1 { margin:0; font-size:1.15rem; color:var(--gold); }
-  header p { margin:4px 0 0; font-size:.8rem; opacity:.7; }
-  main { max-width:760px; margin:0 auto; padding:12px; }
-  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-  select, button { padding:10px 14px; border-radius:10px; border:0; font-size:1rem; }
-  select { background:var(--card); color:var(--txt); flex:1; min-width:140px; }
-  button { background:var(--gold); color:#1a1405; font-weight:700; }
-  button.alt { background:var(--card); color:var(--txt); border:1px solid var(--gold); }
-  .stage { position:relative; width:100%; background:#000; border-radius:14px; overflow:hidden; aspect-ratio:3/4; }
-  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
-  .banner { position:absolute; left:8px; right:8px; bottom:8px; padding:10px; border-radius:10px;
-            background:rgba(0,0,0,.65); text-align:center; font-weight:700; font-size:1.05rem; }
-  .banner.good { color:var(--good); } .banner.bad { color:var(--bad); }
-  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:10px 0; }
-  .card { background:var(--card); border-radius:12px; padding:10px; text-align:center; }
-  .card b { display:block; font-size:1.7rem; color:var(--gold); }
-  .card span { font-size:.75rem; opacity:.75; }
-  .panel { background:var(--card); border-radius:12px; padding:12px; margin-bottom:10px; }
-  .panel h3 { margin:0 0 8px; font-size:.95rem; color:var(--gold); }
-  .bars { display:flex; align-items:flex-end; gap:4px; height:90px; }
-  .bar { flex:1; min-width:6px; border-radius:4px 4px 0 0; background:var(--good); position:relative; }
-  .bar.mid { background:#e7b73c; } .bar.low { background:var(--bad); }
-  .warn { color:var(--bad); font-weight:700; }
-  #summary { display:none; }
-  small { opacity:.65; }
+  :root{--bg:#f6f3ea;--card:#ffffff;--txt:#1e1a10;--mut:#7a7360;--gold:#b8872b;--good:#1fa95b;--bad:#e04646;--line:#e5dfcf}
+  [data-theme="dark"]{--bg:#14110b;--card:#241f14;--txt:#f4efe3;--mut:#a69f8a;--gold:#c9a24a;--line:#3a321f}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt);padding-bottom:80px}
+  .mut{color:var(--mut)} .small{font-size:.8rem}
+  h1{margin:6px 0;font-size:1.4rem;color:var(--gold)}
+  input,select{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font-size:1rem;margin-bottom:10px}
+  .btn{width:100%;padding:12px;border:0;border-radius:12px;background:var(--gold);color:#1a1405;font-weight:700;font-size:1rem;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--gold)}
+  .btn:disabled{opacity:.5}
+  .icon-btn{border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:10px;padding:8px 11px;font-size:1rem;cursor:pointer}
+  /* auth */
+  #auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .auth-card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;text-align:center}
+  .logo{font-size:2.4rem}
+  .tabs{display:flex;gap:6px;margin:14px 0}
+  .tab{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--txt);font-weight:600}
+  .tab.active{background:var(--gold);color:#1a1405;border-color:var(--gold)}
+  .msg{min-height:1.2em;font-size:.85rem;color:var(--bad);margin:8px 0 0}
+  /* app */
+  .top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line)}
+  .brand{flex:1;font-weight:800;color:var(--gold)}
+  main{max-width:760px;margin:0 auto;padding:14px}
+  .page{display:none}.page.active{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+  .card h3{margin:0 0 10px;font-size:1rem;color:var(--gold)}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 4px;text-align:center}
+  .stat b{display:block;font-size:1.4rem;color:var(--gold)}
+  .stat span{font-size:.65rem;color:var(--mut)}
+  .ex-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .ex{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:left;color:var(--txt);cursor:pointer}
+  .ex .i{font-size:1.6rem}.ex b{display:block;margin-top:4px}.ex small{color:var(--mut)}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px}
+  .chip{flex:0 0 auto;padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--txt);font-weight:600;white-space:nowrap}
+  .chip.active{background:var(--gold);color:#1a1405;border-color:var(--gold)}
+  .row{display:flex;gap:8px;margin-bottom:8px}.row>*{flex:1}
+  .stage{position:relative;width:100%;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:3/4}
+  video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .stage.mirror video,.stage.mirror canvas{transform:scaleX(-1)}
+  .banner{position:absolute;left:8px;right:8px;bottom:8px;padding:10px;border-radius:10px;background:rgba(0,0,0,.7);color:#fff;text-align:center;font-weight:700}
+  .banner.good{color:#4cd37b}.banner.bad{color:#ff6b6b}
+  .bars{display:flex;align-items:flex-end;gap:4px;height:90px}
+  .bar{flex:1;min-width:6px;border-radius:4px 4px 0 0;background:var(--good)}
+  .bar.mid{background:#e7b73c}.bar.low{background:var(--bad)}
+  .warn{color:var(--bad);font-weight:700}
+  .pbar{height:10px;border-radius:6px;background:var(--line);overflow:hidden;margin:6px 0}
+  .pbar i{display:block;height:100%;background:var(--gold)}
+  .item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:0}
+  .badge{font-size:.7rem;padding:2px 8px;border-radius:10px;background:var(--line)}
+  .badge.warn{background:var(--bad);color:#fff}
+  .steps{padding-left:18px;margin:0}.steps li{margin-bottom:8px}
+  nav.bottom{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);z-index:20}
+  nav.bottom button{flex:1;padding:8px 2px 10px;border:0;background:transparent;color:var(--mut);font-size:.7rem}
+  nav.bottom button span{display:block;font-size:1.3rem}
+  nav.bottom button.active{color:var(--gold);font-weight:700}
+  svg{width:100%;height:auto}
 </style>
 </head>
 <body>
-<header>
-  <h1>AI Fitness Form Checker</h1>
-  <p>Pose Estimation (MediaPipe) · Rep Counter · Form Degradation · Voice Assistant</p>
-</header>
 
-<main>
-  <div class="controls">
-    <select id="exercise">
-      <option value="squat">Squat</option>
-      <option value="pushup">Push-up</option>
-      <option value="curl">Bicep Curl</option>
-    </select>
-    <button id="startBtn">▶ Start</button>
-    <button id="finishBtn" class="alt">Finish</button>
+<!-- ================= AUTH ================= -->
+<section id="auth">
+  <div class="auth-card">
+    <div class="logo">💪</div>
+    <h1>FitForm AI</h1>
+    <p class="mut small">AI Fitness Form Checker using Pose Estimation</p>
+    <div class="tabs">
+      <button class="tab active" id="tabLogin" type="button">Login</button>
+      <button class="tab" id="tabSignup" type="button">Sign up</button>
+    </div>
+    <form id="authForm" autocomplete="off">
+      <input id="fName" placeholder="Your name" hidden>
+      <input id="fUser" placeholder="Username" autocapitalize="none" required>
+      <input id="fPass" type="password" placeholder="Password (min 4 characters)" required>
+      <button class="btn" type="submit" id="authBtn">Login</button>
+      <p class="msg" id="authMsg"></p>
+    </form>
+    <button class="btn ghost" id="guestBtn" type="button">Continue as guest</button>
+    <p style="margin-top:14px"><button class="icon-btn" id="authTheme" type="button">🌙</button></p>
   </div>
+</section>
 
-  <div class="stage">
-    <video id="video" playsinline muted></video>
-    <canvas id="canvas"></canvas>
-    <div class="banner" id="banner">Press Start, allow camera 🎥</div>
-  </div>
+<!-- ================= APP ================= -->
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand">💪 FitForm AI</div>
+    <button class="icon-btn" id="themeBtn" type="button">🌙</button>
+    <button class="icon-btn" id="logoutBtn" type="button">⎋</button>
+  </header>
 
-  <div class="grid">
-    <div class="card"><b id="reps">0</b><span>REPS</span></div>
-    <div class="card"><b id="score">--</b><span>LAST REP SCORE</span></div>
-    <div class="card"><b id="time">0s</b><span>TIME</span></div>
-  </div>
+  <main>
+    <!-- HOME -->
+    <section class="page active" id="page-home">
+      <h2 id="hello" style="margin:4px 0 12px">Hi 👋</h2>
+      <div class="grid4">
+        <div class="stat"><b id="sSessions">0</b><span>SESSIONS</span></div>
+        <div class="stat"><b id="sReps">0</b><span>TOTAL REPS</span></div>
+        <div class="stat"><b id="sAvg">--</b><span>AVG SCORE</span></div>
+        <div class="stat"><b id="sStreak">0</b><span>DAY STREAK</span></div>
+      </div>
+      <div class="card">
+        <h3>🎯 Today's goal</h3>
+        <div class="pbar"><i id="goalBar" style="width:0%"></i></div>
+        <div class="row" style="align-items:center;margin:0">
+          <span class="small mut" id="goalTxt">0 / 30 reps</span>
+          <input id="goalInput" type="number" min="5" max="500" style="margin:0;max-width:110px" title="Daily goal">
+        </div>
+      </div>
+      <div class="card">
+        <h3>Choose a workout</h3>
+        <div class="ex-grid" id="exGrid"></div>
+      </div>
+      <div class="card">
+        <h3>Recent sessions</h3>
+        <div id="recent"></div>
+      </div>
+    </section>
 
-  <div class="panel">
-    <h3>Rep-by-rep form score</h3>
-    <div class="bars" id="bars"></div>
-    <p id="degrade" style="margin:8px 0 0"></p>
-  </div>
+    <!-- WORKOUT -->
+    <section class="page" id="page-workout">
+      <div class="chips" id="chips"></div>
+      <p class="mut small" id="exHint" style="margin:0 0 8px"></p>
+      <div class="row">
+        <div><label class="mut small" for="target">Target</label><input id="target" type="number" min="1" max="300" value="10"></div>
+        <div><label class="mut small" for="facing">Camera</label>
+          <select id="facing"><option value="user">🤳 Front</option><option value="environment">📷 Back</option></select></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="startBtn" type="button">▶ Start</button>
+        <button class="btn ghost" id="finishBtn" type="button">■ Finish</button>
+      </div>
+      <div class="stage mirror" id="stage">
+        <video id="video" playsinline muted></video>
+        <canvas id="canvas"></canvas>
+        <div class="banner" id="banner">Press Start, allow camera 🎥</div>
+      </div>
+      <div class="grid4">
+        <div class="stat"><b id="reps">0</b><span id="repLabel">REPS</span></div>
+        <div class="stat"><b id="score">--</b><span>SCORE</span></div>
+        <div class="stat"><b id="time">0s</b><span>TIME</span></div>
+        <div class="stat"><b id="kcal">0</b><span>KCAL (est)</span></div>
+      </div>
+      <div class="card">
+        <h3>Form score trend</h3>
+        <div class="bars" id="bars"></div>
+        <p id="degrade" style="margin:8px 0 0"></p>
+        <label style="display:block;margin-top:10px"><input type="checkbox" id="voiceOn" checked style="width:auto;margin:0 6px 0 0"> 🔊 Voice assistant</label>
+      </div>
+      <div class="card" id="summary" hidden></div>
+    </section>
 
-  <div class="panel">
-    <label><input type="checkbox" id="voiceOn" checked> 🔊 Voice assistant ON</label><br>
-    <small>Tip: phone ah side angle la vechu, full body (head to feet) theriyura mari 1.5–2m dhooram la nilunga. Push-up ku phone ah tharalayila vechu side view la vainga.</small>
-  </div>
+    <!-- HISTORY -->
+    <section class="page" id="page-history">
+      <div class="card">
+        <h3>📜 Workout history</h3>
+        <div id="histList"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn ghost" id="csvBtn" type="button">⬇ Export CSV</button>
+          <button class="btn ghost" id="clearBtn" type="button">🗑 Clear all</button>
+        </div>
+      </div>
+    </section>
 
-  <div class="panel" id="summary"></div>
-</main>
+    <!-- PROGRESS -->
+    <section class="page" id="page-progress">
+      <select id="progEx"></select>
+      <div class="grid4" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat"><b id="pSessions">0</b><span>SESSIONS</span></div>
+        <div class="stat"><b id="pBest">--</b><span>BEST SCORE</span></div>
+        <div class="stat"><b id="pMax">--</b><span>BEST REPS/SECS</span></div>
+      </div>
+      <div class="card"><h3>📈 Form score per session</h3><div id="chartScore"></div></div>
+      <div class="card"><h3>📊 Reps – last 7 days</h3><div id="chartReps"></div></div>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="page" id="page-about">
+      <div class="card">
+        <h3>ℹ️ About FitForm AI</h3>
+        <p style="margin-top:0">An AI fitness form checker that uses your camera, detects body joints in real time and gives live voice correction. Everything runs on your phone – your video is never uploaded.</p>
+      </div>
+      <div class="card">
+        <h3>How it works</h3>
+        <ol class="steps">
+          <li><b>Camera Input</b> – captures your exercise movement.</li>
+          <li><b>Pose Estimation</b> – MediaPipe detects 33 body keypoints.</li>
+          <li><b>Form Analysis</b> – joint angles are checked against rules.</li>
+          <li><b>Rep Counting</b> – counts reps and tracks time.</li>
+          <li><b>Form Degradation</b> – compares first reps with last reps to detect fatigue.</li>
+          <li><b>Voice Assistant</b> – real-time spoken corrections.</li>
+          <li><b>Website Output</b> – history, progress charts and summary.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3>📷 Camera tips</h3>
+        <ul class="steps">
+          <li>Keep the phone steady, <b>side view</b>, 1.5–2 m away.</li>
+          <li>Head to feet should be visible with good light.</li>
+          <li>Move slowly and with control: one clean rep takes about 2 seconds.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🛠 Tech used</h3>
+        <p class="mut" style="margin:0">MediaPipe Pose Landmarker · JavaScript · HTML/CSS · Web Speech API · GitHub Pages</p>
+      </div>
+      <p class="mut small">Calories are rough estimates. This app is for learning and is not medical advice.</p>
+    </section>
+  </main>
+
+  <nav class="bottom" id="nav">
+    <button data-go="home" class="active"><span>🏠</span>Home</button>
+    <button data-go="workout"><span>🏋️</span>Workout</button>
+    <button data-go="history"><span>📜</span>History</button>
+    <button data-go="progress"><span>📈</span>Progress</button>
+    <button data-go="about"><span>ℹ️</span>About</button>
+  </nav>
+</div>
 
 <script type="module">
 import { PoseLandmarker, FilesetResolver, DrawingUtils }
   from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 const $ = id => document.getElementById(id);
-const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
-let landmarker, running = false, startTime = 0, lastVideoTime = -1;
+const $$ = s => [...document.querySelectorAll(s)];
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
 
-// ---------- Rep / form state ----------
-let reps = 0, stage = "up", minAngle = 999, repIssues = new Set();
-let scores = [], lastSpoken = "", lastSpokenAt = 0, lastDegradeAlertRep = -10;
-let lockedSide = null, smAng = null, lastRepTime = 0, stageTime = 0;
+const WASM  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
-function resetTracking() {
-  lockedSide = null; smAng = null; stage = "up"; minAngle = 999;
-  repIssues = new Set(); lastRepTime = 0; stageTime = 0;
+// ---------------- Exercises ----------------
+const EX = {
+  squat:  { name:"Squat",          icon:"🏋️", hint:"Side view · knee angle",        down:100, up:160, depthMax:110, depthMsg:"Go deeper", kcal:.32, def:10 },
+  pushup: { name:"Push-up",        icon:"🤸", hint:"Side view · elbow angle",       down:95,  up:150, depthMax:105, depthMsg:"Go lower",  kcal:.32, def:10 },
+  curl:   { name:"Bicep Curl",     icon:"💪", hint:"Keep elbow close to your body", down:150, up:40,  depthMax:55,  depthMsg:"Curl higher", inverted:true, kcal:.15, def:12 },
+  lunge:  { name:"Lunge",          icon:"🦵", hint:"Side view · front knee angle",  down:100, up:160, depthMax:110, depthMsg:"Go lower",  kcal:.30, def:10 },
+  press:  { name:"Shoulder Press", icon:"🙌", hint:"Press fully overhead",          down:90,  up:160, depthMax:100, depthMsg:"Lower your hands more", kcal:.25, def:10 },
+  plank:  { name:"Plank",          icon:"🧘", hint:"Hold body straight (seconds)",  timed:true, kcal:.10, def:30 }
+};
+const MIN_REP_MS = 800;
+
+// ---------------- Theme ----------------
+let theme = store.get("afc_theme", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+function applyTheme(t){
+  theme = t; document.documentElement.setAttribute("data-theme", t); store.set("afc_theme", t);
+  const ic = t === "dark" ? "☀️" : "🌙";
+  $("themeBtn").textContent = ic; $("authTheme").textContent = ic;
+}
+const toggleTheme = () => applyTheme(theme === "dark" ? "light" : "dark");
+$("themeBtn").onclick = toggleTheme; $("authTheme").onclick = toggleTheme;
+applyTheme(theme);
+
+// ---------------- Auth ----------------
+let user = null, mode = "login";
+async function sha(t){
+  try {
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+  } catch(e){ return btoa(t); }
+}
+function setMode(m){
+  mode = m;
+  $("tabLogin").classList.toggle("active", m === "login");
+  $("tabSignup").classList.toggle("active", m === "signup");
+  $("fName").hidden = m !== "signup";
+  $("authBtn").textContent = m === "login" ? "Login" : "Create account";
+  $("authMsg").textContent = "";
+}
+$("tabLogin").onclick = () => setMode("login");
+$("tabSignup").onclick = () => setMode("signup");
+
+$("authForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const u = $("fUser").value.trim().toLowerCase(), pw = $("fPass").value;
+  const users = store.get("afc_users", {}), msg = $("authMsg");
+  msg.textContent = "";
+  if (mode === "signup") {
+    const nm = $("fName").value.trim() || u;
+    if (!/^[a-z0-9_.-]{3,20}$/.test(u)) { msg.textContent = "Username: 3-20 letters or numbers"; return; }
+    if (pw.length < 4) { msg.textContent = "Password must be at least 4 characters"; return; }
+    if (users[u]) { msg.textContent = "Username already exists"; return; }
+    users[u] = { h: await sha(u + ":" + pw) };
+    store.set("afc_users", users);
+    store.set("afc_p_" + u, { name: nm, goal: 30 });
+    enterApp(u);
+  } else {
+    if (!users[u] || users[u].h !== await sha(u + ":" + pw)) { msg.textContent = "Wrong username or password"; return; }
+    enterApp(u);
+  }
+});
+$("guestBtn").onclick = () => {
+  if (!store.get("afc_p_guest", null)) store.set("afc_p_guest", { name: "Guest", goal: 30 });
+  enterApp("guest");
+};
+$("logoutBtn").onclick = () => { if (running) finish(); store.set("afc_session", null); location.reload(); };
+
+const profile = () => store.get("afc_p_" + user, { name: user, goal: 30 });
+const hist = () => store.get("afc_h_" + user, []).filter(s => EX[s.ex]);
+const setHist = h => store.set("afc_h_" + user, h);
+
+function enterApp(u){
+  user = u; store.set("afc_session", u);
+  $("auth").hidden = true; $("app").hidden = false;
+  buildExUI(); setEx(curEx); go("home");
 }
 
-// ---------- Helpers ----------
+// ---------------- Navigation ----------------
+function go(p){
+  if (running && p !== "workout") finish();
+  $$(".page").forEach(e => e.classList.toggle("active", e.id === "page-" + p));
+  $$("#nav button").forEach(b => b.classList.toggle("active", b.dataset.go === p));
+  if (p === "home") renderHome();
+  if (p === "history") renderHistory();
+  if (p === "progress") renderProgress();
+  window.scrollTo(0, 0);
+}
+$("nav").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(b.dataset.go); });
+
+// ---------------- Exercise UI ----------------
+let curEx = "squat";
+function buildExUI(){
+  $("exGrid").innerHTML = Object.entries(EX).map(([k, v]) =>
+    `<button class="ex" data-ex="${k}"><div class="i">${v.icon}</div><b>${v.name}</b><small>${v.hint}</small></button>`).join("");
+  $("chips").innerHTML = Object.entries(EX).map(([k, v]) =>
+    `<button class="chip" data-ex="${k}">${v.icon} ${v.name}</button>`).join("");
+  $("progEx").innerHTML = '<option value="all">All exercises</option>' +
+    Object.entries(EX).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
+}
+$("exGrid").addEventListener("click", e => { const b = e.target.closest("[data-ex]"); if (b) { setEx(b.dataset.ex); go("workout"); } });
+$("chips").addEventListener("click", e => { const b = e.target.closest("[data-ex]"); if (b) setEx(b.dataset.ex); });
+
+function setEx(k){
+  if (running) return;
+  curEx = k;
+  $$("#chips .chip").forEach(c => c.classList.toggle("active", c.dataset.ex === k));
+  $("exHint").textContent = EX[k].icon + " " + EX[k].hint;
+  $("target").value = EX[k].def;
+  $("repLabel").textContent = EX[k].timed ? "HOLD (s)" : "REPS";
+  resetUI();
+}
+function resetUI(){
+  $("reps").textContent = 0; $("score").textContent = "--"; $("time").textContent = "0s";
+  $("kcal").textContent = 0; $("bars").innerHTML = ""; $("degrade").innerHTML = "";
+  $("summary").hidden = true;
+}
+
+// ---------------- Workout state ----------------
+const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+const du = new DrawingUtils(ctx);
+let landmarker, running = false, rafId = 0, startTime = 0, lastVideoTime = -1, wl = null;
+let count = 0, stage = "up", minAngle = 999, repIssues = new Set(), scores = [];
+let lockedSide = null, smAng = null, lastRepTime = 0, stageTime = 0;
+let lastSpoken = "", lastSpokenAt = 0, lastDegradeAlertRep = -10, targetHit = false;
+let issueCount = {}, holdMs = 0, lastFrameT = 0, winFrames = 0, winBad = 0, winStart = 0;
+
+function resetTracking(){
+  lockedSide = null; smAng = null; stage = "up"; minAngle = 999; repIssues = new Set();
+  lastRepTime = 0; stageTime = 0; count = 0; scores = []; targetHit = false; issueCount = {};
+  holdMs = 0; lastFrameT = 0; winFrames = 0; winBad = 0; winStart = Date.now(); lastDegradeAlertRep = -10;
+}
+
+// ---------------- Helpers ----------------
 const deg = r => r * 180 / Math.PI;
-function angle(a, b, c) {
+function angle(a, b, c){
   const r = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
   let d = Math.abs(deg(r)); if (d > 180) d = 360 - d; return d;
 }
-function speak(msg, force = false) {
+function setBanner(msg, good){ const b = $("banner"); b.textContent = msg; b.className = "banner " + (good ? "good" : "bad"); }
+function speak(msg, force = false){
   $("banner").textContent = msg;
   if (!$("voiceOn").checked || !("speechSynthesis" in window)) return;
   const now = Date.now();
@@ -113,70 +390,118 @@ function speak(msg, force = false) {
   speechSynthesis.speak(u);
   lastSpoken = msg; lastSpokenAt = now;
 }
-function setBanner(msg, good) {
-  const b = $("banner"); b.textContent = msg; b.className = "banner " + (good ? "good" : "bad");
-}
+const noteIssue = i => { issueCount[i] = (issueCount[i] || 0) + 1; };
+async function lockScreen(){ try { if ("wakeLock" in navigator) wl = await navigator.wakeLock.request("screen"); } catch(e){} }
+function unlockScreen(){ try { if (wl) wl.release(); } catch(e){} wl = null; }
 
-// ---------- Exercise logic ----------
-const CFG = {
-  squat:  { down: 100, up: 160, depthMax: 110, depthMsg: "Go deeper" },
-  pushup: { down: 95,  up: 150, depthMax: 105, depthMsg: "Go lower" },
-  curl:   { down: 150, up: 40,  depthMax: 55,  depthMsg: "Curl higher", inverted: true }
-};
-const MIN_REP_MS = 800;
-
-function analyze(lm, ex) {
+// ---------------- Pose analysis ----------------
+function analyze(lm, ex){
   const L = { s:11, e:13, w:15, h:23, k:25, a:27 }, R = { s:12, e:14, w:16, h:24, k:26, a:28 };
   const vis = S => (lm[S.s].visibility + lm[S.h].visibility + lm[S.k].visibility + lm[S.e].visibility) / 4;
-
-  // lock the side once so left/right never flips mid-exercise
   if (!lockedSide) {
     if (vis(L) < 0.5 && vis(R) < 0.5) return { ok:false };
     lockedSide = vis(L) >= vis(R) ? "L" : "R";
   }
-  const S = lockedSide === "L" ? L : R;
+  const S = lockedSide === "L" ? L : R, O = lockedSide === "L" ? R : L;
   const P = k => lm[S[k]];
-  const need = ex === "squat" ? ["h","k","a"] : ["s","e","w"];
+  const need = { squat:["h","k","a"], lunge:["h","k","a"], pushup:["s","e","w"], curl:["s","e","w"], press:["s","e","w"], plank:["s","h","a"] }[ex];
   if (need.some(k => P(k).visibility < 0.5)) return { ok:false };
 
   const issues = [];
   let ang;
+  const lean = () => deg(Math.atan2(Math.abs(P("s").x - P("h").x), Math.abs(P("h").y - P("s").y)));
+
   if (ex === "squat") {
     ang = angle(P("h"), P("k"), P("a"));
-    if (ang < 130) {
-      const lean = deg(Math.atan2(Math.abs(P("s").x - P("h").x), Math.abs(P("h").y - P("s").y)));
-      if (lean > 55) issues.push("Keep your chest up");
-    }
+    if (ang < 130 && lean() > 55) issues.push("Keep your chest up");
+  } else if (ex === "lunge") {
+    ang = angle(P("h"), P("k"), P("a"));
+    if (lm[O.h].visibility > 0.5 && lm[O.k].visibility > 0.5 && lm[O.a].visibility > 0.5)
+      ang = Math.min(ang, angle(lm[O.h], lm[O.k], lm[O.a]));
+    if (ang < 130 && lean() > 35) issues.push("Keep your torso upright");
   } else if (ex === "pushup") {
     ang = angle(P("s"), P("e"), P("w"));
-    if (P("h").visibility > 0.5 && P("a").visibility > 0.5) {
-      const body = angle(P("s"), P("h"), P("a"));
-      if (body < 155) issues.push("Keep your body straight");
-    }
-  } else {
+    if (P("h").visibility > 0.5 && P("a").visibility > 0.5 && angle(P("s"), P("h"), P("a")) < 155)
+      issues.push("Keep your body straight");
+  } else if (ex === "curl") {
     ang = angle(P("s"), P("e"), P("w"));
-    if (ang < 120 && P("h").visibility > 0.5) {
-      const drift = angle(P("e"), P("s"), P("h"));
-      if (drift > 35) issues.push("Keep your elbow close");
+    if (ang < 120 && P("h").visibility > 0.5 && angle(P("e"), P("s"), P("h")) > 35) issues.push("Keep your elbow close");
+  } else if (ex === "press") {
+    ang = angle(P("s"), P("e"), P("w"));
+    if (ang > 140 && P("h").visibility > 0.5 && lean() > 20) issues.push("Don't lean back");
+  } else if (ex === "plank") {
+    ang = angle(P("s"), P("h"), P("a"));
+    if (ang < 160) {
+      const dx = P("a").x - P("s").x;
+      if (Math.abs(dx) > 0.05) {
+        const yLine = P("s").y + (P("a").y - P("s").y) * ((P("h").x - P("s").x) / dx);
+        issues.push(P("h").y > yLine + 0.02 ? "Lift your hips" : P("h").y < yLine - 0.02 ? "Lower your hips" : "Keep your body straight");
+      } else issues.push("Keep your body straight");
     }
   }
   return { ok:true, ang, issues };
 }
 
-function finishRep(ex) {
-  const c = CFG[ex];
-  let penalty = repIssues.size * 15;
-  if (minAngle > c.depthMax) { repIssues.add(c.depthMsg); penalty += 20; }
-  const sc = Math.max(0, 100 - penalty);
-  reps++; scores.push(sc);
-  $("reps").textContent = reps; $("score").textContent = sc;
-  drawBars(); checkDegradation();
-  if (repIssues.size) speak([...repIssues][0] + ". Rep " + reps);
-  else { setBanner("Rep " + reps + " ✔ Good form", true); speak("Rep " + reps); }
-  minAngle = 999; repIssues = new Set();
+// ---------------- Rep logic ----------------
+function handleReps(r, c, now){
+  smAng = smAng === null ? r.ang : 0.4 * r.ang + 0.6 * smAng;
+  const a = smAng;
+  r.issues.forEach(i => { repIssues.add(i); noteIssue(i); });
+  if (r.issues.length) { setBanner(r.issues[0], false); speak(r.issues[0]); }
+  minAngle = Math.min(minAngle, a);
+
+  const startS = c.inverted ? "curled" : "down";
+  const enter = c.inverted ? a < c.up : a < c.down;
+  const exit  = c.inverted ? a > c.down : a > c.up;
+  if (enter && stage === "up") { stage = startS; stageTime = now; }
+  if (exit && stage === startS) {
+    stage = "up";
+    if (now - lastRepTime > MIN_REP_MS && now - stageTime > 250) { lastRepTime = now; finishRep(c); }
+    else { minAngle = 999; repIssues = new Set(); }
+  }
 }
 
-function drawBars() {
+function finishRep(c){
+  let penalty = repIssues.size * 15;
+  if (minAngle > c.depthMax) { repIssues.add(c.depthMsg); noteIssue(c.depthMsg); penalty += 20; }
+  const sc = Math.max(0, 100 - penalty);
+  count++; scores.push(sc);
+  $("reps").textContent = count; $("score").textContent = sc;
+  $("kcal").textContent = (count * c.kcal).toFixed(1);
+  drawBars(); checkDegradation();
+  if (repIssues.size) speak([...repIssues][0] + ". Rep " + count);
+  else { setBanner("Rep " + count + " ✔ Good form", true); speak("Rep " + count); }
+  minAngle = 999; repIssues = new Set();
+  checkTarget();
+}
+
+function handlePlank(r, dt, now, c){
+  const good = r.issues.length === 0;
+  winFrames++; if (!good) winBad++;
+  if (good) holdMs += dt;
+  r.issues.forEach(noteIssue);
+  if (!good) { setBanner(r.issues[0], false); speak(r.issues[0]); }
+  else setBanner("Good form – hold! " + Math.floor(holdMs / 1000) + "s", true);
+  const secs = Math.floor(holdMs / 1000);
+  if (secs !== count) { count = secs; $("reps").textContent = count; $("kcal").textContent = (count * c.kcal).toFixed(1); }
+  if (now - winStart >= 5000) {
+    const sc = Math.round(100 * (1 - winBad / Math.max(1, winFrames)));
+    scores.push(sc); $("score").textContent = sc;
+    drawBars(); checkDegradation();
+    winFrames = 0; winBad = 0; winStart = now;
+  }
+  checkTarget();
+}
+
+function checkTarget(){
+  const t = +$("target").value;
+  if (t > 0 && count >= t && !targetHit) {
+    targetHit = true; setBanner("🎯 Target completed!", true);
+    speak("Target completed. Great job!", true);
+  }
+}
+
+function drawBars(){
   const box = $("bars"); box.innerHTML = "";
   scores.slice(-20).forEach(s => {
     const d = document.createElement("div");
@@ -185,114 +510,6 @@ function drawBars() {
     box.appendChild(d);
   });
 }
-
-function degradeState() {
+function degradeState(){
   if (scores.length < 4) return false;
-  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
-  return avg(scores.slice(0, 2)) - avg(scores.slice(-2)) >= 15;
-}
-function checkDegradation() {
-  const bad = degradeState();
-  $("degrade").innerHTML = bad
-    ? '<span class="warn">⚠ Form degradation detected – form getting worse due to fatigue</span>'
-    : (scores.length >= 4 ? "✅ Form is stable" : "<small>Form trend needs 4+ reps</small>");
-  if (bad && reps - lastDegradeAlertRep >= 3) {
-    lastDegradeAlertRep = reps;
-    setTimeout(() => speak("Your form is getting worse. Take a short rest.", true), 1500);
-  }
-}
-
-// ---------- Main loop ----------
-function loop() {
-  if (!running) return;
-  if (video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    const res = landmarker.detectForVideo(video, performance.now());
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (res.landmarks && res.landmarks.length) {
-      const lm = res.landmarks[0], ex = $("exercise").value, c = CFG[ex];
-      const r = analyze(lm, ex);
-      const du = new DrawingUtils(ctx);
-      const colour = r.ok && r.issues.length ? "#ff5d5d" : "#4cd37b";
-      du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: colour, lineWidth: 3 });
-      du.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
-
-      if (!r.ok) { setBanner("Full body camera la varura mari nillunga", false); }
-      else {
-        // smooth the angle to remove jitter
-        smAng = smAng === null ? r.ang : 0.4 * r.ang + 0.6 * smAng;
-        const a = smAng, now = Date.now();
-
-        r.issues.forEach(i => repIssues.add(i));
-        if (r.issues.length) { setBanner(r.issues[0], false); speak(r.issues[0]); }
-        minAngle = Math.min(minAngle, a);
-
-        if (!c.inverted) {
-          if (a < c.down && stage === "up") { stage = "down"; stageTime = now; }
-          if (a > c.up && stage === "down") {
-            stage = "up";
-            if (now - lastRepTime > MIN_REP_MS && now - stageTime > 250) { lastRepTime = now; finishRep(ex); }
-            else { minAngle = 999; repIssues = new Set(); }
-          }
-        } else {
-          if (a < c.up && stage === "up") { stage = "curled"; stageTime = now; }
-          if (a > c.down && stage === "curled") {
-            stage = "up";
-            if (now - lastRepTime > MIN_REP_MS && now - stageTime > 250) { lastRepTime = now; finishRep(ex); }
-            else { minAngle = 999; repIssues = new Set(); }
-          }
-        }
-      }
-    }
-    $("time").textContent = Math.round((Date.now() - startTime) / 1000) + "s";
-  }
-  requestAnimationFrame(loop);
-}
-
-// ---------- Start / Finish ----------
-async function start() {
-  $("startBtn").disabled = true; setBanner("Loading AI model…", true);
-  try {
-    if (!landmarker) {
-      const fileset = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-      landmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task", delegate: "GPU" },
-        runningMode: "VIDEO", numPoses: 1
-      });
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 }, audio: false });
-    video.srcObject = stream; await video.play();
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    reps = 0; scores = []; lastDegradeAlertRep = -10; resetTracking();
-    $("reps").textContent = 0; $("score").textContent = "--"; $("bars").innerHTML = ""; $("degrade").innerHTML = "";
-    $("summary").style.display = "none";
-    startTime = Date.now(); running = true;
-    setBanner("Ready! Start exercise 💪", true); speak("Ready. Start your exercise.", true);
-    loop();
-  } catch (e) {
-    console.error(e); setBanner("Camera / model error: " + e.message, false); $("startBtn").disabled = false;
-  }
-}
-
-function finish() {
-  running = false;
-  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
-  $("startBtn").disabled = false;
-  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-  const s = $("summary"); s.style.display = "block";
-  s.innerHTML = `<h3>Session Summary</h3>
-    Exercise: <b>${$("exercise").selectedOptions[0].text}</b><br>
-    Total reps: <b>${reps}</b><br>
-    Average form score: <b>${avg}/100</b><br>
-    Time: <b>${$("time").textContent}</b><br>
-    Form degradation: <b>${degradeState() ? "Yes ⚠" : "No ✅"}</b>`;
-  setBanner("Session finished 🎉", true);
-  speak("Session finished. Total reps " + reps, true);
-}
-
-$("exercise").onchange = resetTracking;
-$("startBtn").onclick = start;
-$("finishBtn").onclick = finish;
-</script>
-</body>
-</html>
+  const avg = a => a.red
