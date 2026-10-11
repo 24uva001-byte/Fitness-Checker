@@ -18,6 +18,7 @@
   .btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--gold)}
   .btn:disabled{opacity:.5}
   .icon-btn{border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:10px;padding:8px 11px;font-size:1rem;cursor:pointer}
+  #errBox{position:fixed;top:0;left:0;right:0;z-index:99;background:#b00020;color:#fff;padding:8px 12px;font-size:.8rem;word-break:break-word}
   #auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
   .auth-card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;text-align:center}
   .logo{font-size:2.4rem}
@@ -66,12 +67,14 @@
 </style>
 </head>
 <body>
+<div id="errBox" hidden></div>
 
 <section id="auth">
   <div class="auth-card">
     <div class="logo">💪</div>
     <h1>FitForm AI</h1>
-    <p class="mut small">AI Fitness Form Checker using Pose Estimation</p>
+    <p class="mut small" style="margin:0">AI Fitness Form Checker using Pose Estimation</p>
+    <p class="small" id="jsStatus" style="margin:6px 0 0;color:#e08a00">v6 · ⏳ loading…</p>
     <div class="tabs">
       <button class="tab active" id="tabLogin" type="button">Login</button>
       <button class="tab" id="tabSignup" type="button">Sign up</button>
@@ -218,22 +221,35 @@
   </nav>
 </div>
 
-<script type="module">
-// MediaPipe is loaded only when a workout starts, so login/UI never depends on it
-let PoseLandmarker, FilesetResolver, DrawingUtils;
+<script>
+window.addEventListener("error", function (e) {
+  var b = document.getElementById("errBox"); if (!b) return;
+  b.hidden = false; b.textContent = "⚠ Error: " + (e.message || "unknown") + (e.lineno ? " (line " + e.lineno + ")" : "");
+});
+window.addEventListener("unhandledrejection", function (e) {
+  var b = document.getElementById("errBox"); if (!b) return;
+  b.hidden = false; b.textContent = "⚠ Error: " + (e.reason && e.reason.message ? e.reason.message : e.reason);
+});
+</script>
 
-const $ = id => document.getElementById(id);
-const $$ = s => [...document.querySelectorAll(s)];
-const store = {
-  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
-  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+<script>
+(function () {
+"use strict";
+
+var PoseLandmarker, FilesetResolver, DrawingUtils;
+
+function $(id) { return document.getElementById(id); }
+function $$(s) { return Array.prototype.slice.call(document.querySelectorAll(s)); }
+var store = {
+  get: function (k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
 
-const MP_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-const WASM  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
-const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+var MP_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+var WASM = MP_URL + "/wasm";
+var MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
-const EX = {
+var EX = {
   squat:  { name:"Squat",          icon:"🏋️", hint:"Side view · knee angle",        down:100, up:160, depthMax:110, depthMsg:"Go deeper", kcal:.32, def:10 },
   pushup: { name:"Push-up",        icon:"🤸", hint:"Side view · elbow angle",       down:95,  up:150, depthMax:105, depthMsg:"Go lower",  kcal:.32, def:10 },
   curl:   { name:"Bicep Curl",     icon:"💪", hint:"Keep elbow close to your body", down:150, up:40,  depthMax:55,  depthMsg:"Curl higher", inverted:true, kcal:.15, def:12 },
@@ -241,28 +257,30 @@ const EX = {
   press:  { name:"Shoulder Press", icon:"🙌", hint:"Press fully overhead",          down:90,  up:160, depthMax:100, depthMsg:"Lower your hands more", kcal:.25, def:10 },
   plank:  { name:"Plank",          icon:"🧘", hint:"Hold body straight (seconds)",  timed:true, kcal:.10, def:30 }
 };
-const MIN_REP_MS = 800;
+var MIN_REP_MS = 800;
 
-// ---------------- Theme ----------------
-let theme = store.get("afc_theme", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-function applyTheme(t){
+// ---------- Theme ----------
+var theme = store.get("afc_theme", (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light");
+function applyTheme(t) {
   theme = t; document.documentElement.setAttribute("data-theme", t); store.set("afc_theme", t);
-  const ic = t === "dark" ? "☀️" : "🌙";
+  var ic = t === "dark" ? "☀️" : "🌙";
   $("themeBtn").textContent = ic; $("authTheme").textContent = ic;
 }
-const toggleTheme = () => applyTheme(theme === "dark" ? "light" : "dark");
-$("themeBtn").onclick = toggleTheme; $("authTheme").onclick = toggleTheme;
+function toggleTheme() { applyTheme(theme === "dark" ? "light" : "dark"); }
+$("themeBtn").addEventListener("click", toggleTheme);
+$("authTheme").addEventListener("click", toggleTheme);
 applyTheme(theme);
 
-// ---------------- Auth ----------------
-let user = null, mode = "login";
-async function sha(t){
+// ---------- Auth ----------
+var user = null, mode = "login";
+function sha(t) {
   try {
-    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
-    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
-  } catch(e){ return btoa(t); }
+    return crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)).then(function (b) {
+      return Array.prototype.map.call(new Uint8Array(b), function (x) { return x.toString(16).padStart(2, "0"); }).join("");
+    });
+  } catch (e) { return Promise.resolve(btoa(t)); }
 }
-function setMode(m){
+function setMode(m) {
   mode = m;
   $("tabLogin").classList.toggle("active", m === "login");
   $("tabSignup").classList.toggle("active", m === "signup");
@@ -270,109 +288,458 @@ function setMode(m){
   $("authBtn").textContent = m === "login" ? "Login" : "Create account";
   $("authMsg").textContent = "";
 }
-$("tabLogin").onclick = () => setMode("login");
-$("tabSignup").onclick = () => setMode("signup");
+$("tabLogin").addEventListener("click", function () { setMode("login"); });
+$("tabSignup").addEventListener("click", function () { setMode("signup"); });
 
-$("authForm").addEventListener("submit", async e => {
+$("authForm").addEventListener("submit", function (e) {
   e.preventDefault();
-  const u = $("fUser").value.trim().toLowerCase(), pw = $("fPass").value;
-  const users = store.get("afc_users", {}), msg = $("authMsg");
+  var u = $("fUser").value.trim().toLowerCase(), pw = $("fPass").value;
+  var users = store.get("afc_users", {}), msg = $("authMsg");
   msg.textContent = "";
   if (mode === "signup") {
-    const nm = $("fName").value.trim() || u;
+    var nm = $("fName").value.trim() || u;
     if (!/^[a-z0-9_.-]{3,20}$/.test(u)) { msg.textContent = "Username: 3-20 letters or numbers"; return; }
     if (pw.length < 4) { msg.textContent = "Password must be at least 4 characters"; return; }
     if (users[u]) { msg.textContent = "Username already exists"; return; }
-    users[u] = { h: await sha(u + ":" + pw) };
-    store.set("afc_users", users);
-    store.set("afc_p_" + u, { name: nm, goal: 30 });
-    enterApp(u);
+    sha(u + ":" + pw).then(function (h) {
+      users[u] = { h: h }; store.set("afc_users", users);
+      store.set("afc_p_" + u, { name: nm, goal: 30 });
+      enterApp(u);
+    });
   } else {
-    if (!users[u] || users[u].h !== await sha(u + ":" + pw)) { msg.textContent = "Wrong username or password"; return; }
-    enterApp(u);
+    sha(u + ":" + pw).then(function (h) {
+      if (!users[u] || users[u].h !== h) { msg.textContent = "Wrong username or password"; return; }
+      enterApp(u);
+    });
   }
 });
-$("guestBtn").onclick = () => {
+$("guestBtn").addEventListener("click", function () {
   if (!store.get("afc_p_guest", null)) store.set("afc_p_guest", { name: "Guest", goal: 30 });
   enterApp("guest");
-};
-$("logoutBtn").onclick = () => { if (running) finish(); store.set("afc_session", null); location.reload(); };
+});
+$("logoutBtn").addEventListener("click", function () { if (running) finish(); store.set("afc_session", null); location.reload(); });
 
-const profile = () => store.get("afc_p_" + user, { name: user, goal: 30 });
-const hist = () => store.get("afc_h_" + user, []).filter(s => EX[s.ex]);
-const setHist = h => store.set("afc_h_" + user, h);
+function profile() { return store.get("afc_p_" + user, { name: user, goal: 30 }); }
+function hist() { return store.get("afc_h_" + user, []).filter(function (s) { return EX[s.ex]; }); }
+function setHist(h) { store.set("afc_h_" + user, h); }
 
-function enterApp(u){
+function enterApp(u) {
   user = u; store.set("afc_session", u);
   $("auth").hidden = true; $("app").hidden = false;
   buildExUI(); setEx(curEx); go("home");
 }
 
-// ---------------- Navigation ----------------
-function go(p){
+// ---------- Navigation ----------
+function go(p) {
   if (running && p !== "workout") finish();
-  $$(".page").forEach(e => e.classList.toggle("active", e.id === "page-" + p));
-  $$("#nav button").forEach(b => b.classList.toggle("active", b.dataset.go === p));
+  $$(".page").forEach(function (e) { e.classList.toggle("active", e.id === "page-" + p); });
+  $$("#nav button").forEach(function (b) { b.classList.toggle("active", b.dataset.go === p); });
   if (p === "home") renderHome();
   if (p === "history") renderHistory();
   if (p === "progress") renderProgress();
   window.scrollTo(0, 0);
 }
-$("nav").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(b.dataset.go); });
+$("nav").addEventListener("click", function (e) { var b = e.target.closest("button"); if (b) go(b.dataset.go); });
 
-// ---------------- Exercise UI ----------------
-let curEx = "squat";
-function buildExUI(){
-  $("exGrid").innerHTML = Object.entries(EX).map(([k, v]) =>
-    `<button class="ex" data-ex="${k}"><div class="i">${v.icon}</div><b>${v.name}</b><small>${v.hint}</small></button>`).join("");
-  $("chips").innerHTML = Object.entries(EX).map(([k, v]) =>
-    `<button class="chip" data-ex="${k}">${v.icon} ${v.name}</button>`).join("");
+// ---------- Exercise UI ----------
+var curEx = "squat";
+function buildExUI() {
+  var keys = Object.keys(EX);
+  $("exGrid").innerHTML = keys.map(function (k) { var v = EX[k];
+    return '<button class="ex" data-ex="' + k + '"><div class="i">' + v.icon + '</div><b>' + v.name + '</b><small>' + v.hint + '</small></button>'; }).join("");
+  $("chips").innerHTML = keys.map(function (k) { var v = EX[k];
+    return '<button class="chip" data-ex="' + k + '">' + v.icon + " " + v.name + '</button>'; }).join("");
   $("progEx").innerHTML = '<option value="all">All exercises</option>' +
-    Object.entries(EX).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
+    keys.map(function (k) { return '<option value="' + k + '">' + EX[k].name + '</option>'; }).join("");
 }
-$("exGrid").addEventListener("click", e => { const b = e.target.closest("[data-ex]"); if (b) { setEx(b.dataset.ex); go("workout"); } });
-$("chips").addEventListener("click", e => { const b = e.target.closest("[data-ex]"); if (b) setEx(b.dataset.ex); });
+$("exGrid").addEventListener("click", function (e) { var b = e.target.closest("[data-ex]"); if (b) { setEx(b.dataset.ex); go("workout"); } });
+$("chips").addEventListener("click", function (e) { var b = e.target.closest("[data-ex]"); if (b) setEx(b.dataset.ex); });
 
-function setEx(k){
+function setEx(k) {
   if (running) return;
   curEx = k;
-  $$("#chips .chip").forEach(c => c.classList.toggle("active", c.dataset.ex === k));
+  $$("#chips .chip").forEach(function (c) { c.classList.toggle("active", c.dataset.ex === k); });
   $("exHint").textContent = EX[k].icon + " " + EX[k].hint;
   $("target").value = EX[k].def;
   $("repLabel").textContent = EX[k].timed ? "HOLD (s)" : "REPS";
   resetUI();
 }
-function resetUI(){
+function resetUI() {
   $("reps").textContent = 0; $("score").textContent = "--"; $("time").textContent = "0s";
   $("kcal").textContent = 0; $("bars").innerHTML = ""; $("degrade").innerHTML = "";
   $("summary").hidden = true;
 }
 
-// ---------------- Workout state ----------------
-const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
-let du = null;
-let landmarker, running = false, rafId = 0, startTime = 0, lastVideoTime = -1, wl = null;
-let count = 0, stage = "up", minAngle = 999, repIssues = new Set(), scores = [];
-let lockedSide = null, smAng = null, lastRepTime = 0, stageTime = 0;
-let lastSpoken = "", lastSpokenAt = 0, lastDegradeAlertRep = -10, targetHit = false;
-let issueCount = {}, holdMs = 0, lastFrameT = 0, winFrames = 0, winBad = 0, winStart = 0;
+// ---------- Workout state ----------
+var video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+var du = null, landmarker = null, running = false, rafId = 0, startTime = 0, lastVideoTime = -1, wl = null;
+var count = 0, stage = "up", minAngle = 999, repIssues = new Set(), scores = [];
+var lockedSide = null, smAng = null, lastRepTime = 0, stageTime = 0;
+var lastSpoken = "", lastSpokenAt = 0, lastDegradeAlertRep = -10, targetHit = false;
+var issueCount = {}, holdMs = 0, lastFrameT = 0, winFrames = 0, winBad = 0, winStart = 0;
 
-function resetTracking(){
+function resetTracking() {
   lockedSide = null; smAng = null; stage = "up"; minAngle = 999; repIssues = new Set();
   lastRepTime = 0; stageTime = 0; count = 0; scores = []; targetHit = false; issueCount = {};
   holdMs = 0; lastFrameT = 0; winFrames = 0; winBad = 0; winStart = Date.now(); lastDegradeAlertRep = -10;
 }
 
-const deg = r => r * 180 / Math.PI;
-function angle(a, b, c){
-  const r = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-  let d = Math.abs(deg(r)); if (d > 180) d = 360 - d; return d;
+function deg(r) { return r * 180 / Math.PI; }
+function angle(a, b, c) {
+  var r = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+  var d = Math.abs(deg(r)); if (d > 180) d = 360 - d; return d;
 }
-function setBanner(msg, good){ const b = $("banner"); b.textContent = msg; b.className = "banner " + (good ? "good" : "bad"); }
-function speak(msg, force = false){
+function setBanner(msg, good) { var b = $("banner"); b.textContent = msg; b.className = "banner " + (good ? "good" : "bad"); }
+function speak(msg, force) {
   $("banner").textContent = msg;
   if (!$("voiceOn").checked || !("speechSynthesis" in window)) return;
-  const now = Date.now();
+  var now = Date.now();
   if (!force && (now - lastSpokenAt < 3500 || (msg === lastSpoken && now - lastSpokenAt < 8000))) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(msg); u.lang = "en
+  var u = new SpeechSynthesisUtterance(msg); u.lang = "en-IN"; u.rate = 1;
+  speechSynthesis.speak(u);
+  lastSpoken = msg; lastSpokenAt = now;
+}
+function noteIssue(i) { issueCount[i] = (issueCount[i] || 0) + 1; }
+function lockScreen() { try { if ("wakeLock" in navigator) navigator.wakeLock.request("screen").then(function (l) { wl = l; }).catch(function () {}); } catch (e) {} }
+function unlockScreen() { try { if (wl) wl.release(); } catch (e) {} wl = null; }
+
+// ---------- Pose analysis ----------
+function analyze(lm, ex) {
+  var L = { s:11, e:13, w:15, h:23, k:25, a:27 }, R = { s:12, e:14, w:16, h:24, k:26, a:28 };
+  function vis(S) { return (lm[S.s].visibility + lm[S.h].visibility + lm[S.k].visibility + lm[S.e].visibility) / 4; }
+  if (!lockedSide) {
+    if (vis(L) < 0.5 && vis(R) < 0.5) return { ok:false };
+    lockedSide = vis(L) >= vis(R) ? "L" : "R";
+  }
+  var S = lockedSide === "L" ? L : R, O = lockedSide === "L" ? R : L;
+  function P(k) { return lm[S[k]]; }
+  var need = { squat:["h","k","a"], lunge:["h","k","a"], pushup:["s","e","w"], curl:["s","e","w"], press:["s","e","w"], plank:["s","h","a"] }[ex];
+  for (var i = 0; i < need.length; i++) { if (P(need[i]).visibility < 0.5) return { ok:false }; }
+
+  var issues = [], ang;
+  function lean() { return deg(Math.atan2(Math.abs(P("s").x - P("h").x), Math.abs(P("h").y - P("s").y))); }
+
+  if (ex === "squat") {
+    ang = angle(P("h"), P("k"), P("a"));
+    if (ang < 130 && lean() > 55) issues.push("Keep your chest up");
+  } else if (ex === "lunge") {
+    ang = angle(P("h"), P("k"), P("a"));
+    if (lm[O.h].visibility > 0.5 && lm[O.k].visibility > 0.5 && lm[O.a].visibility > 0.5)
+      ang = Math.min(ang, angle(lm[O.h], lm[O.k], lm[O.a]));
+    if (ang < 130 && lean() > 35) issues.push("Keep your torso upright");
+  } else if (ex === "pushup") {
+    ang = angle(P("s"), P("e"), P("w"));
+    if (P("h").visibility > 0.5 && P("a").visibility > 0.5 && angle(P("s"), P("h"), P("a")) < 155)
+      issues.push("Keep your body straight");
+  } else if (ex === "curl") {
+    ang = angle(P("s"), P("e"), P("w"));
+    if (ang < 120 && P("h").visibility > 0.5 && angle(P("e"), P("s"), P("h")) > 35) issues.push("Keep your elbow close");
+  } else if (ex === "press") {
+    ang = angle(P("s"), P("e"), P("w"));
+    if (ang > 140 && P("h").visibility > 0.5 && lean() > 20) issues.push("Don't lean back");
+  } else if (ex === "plank") {
+    ang = angle(P("s"), P("h"), P("a"));
+    if (ang < 160) {
+      var dx = P("a").x - P("s").x;
+      if (Math.abs(dx) > 0.05) {
+        var yLine = P("s").y + (P("a").y - P("s").y) * ((P("h").x - P("s").x) / dx);
+        issues.push(P("h").y > yLine + 0.02 ? "Lift your hips" : P("h").y < yLine - 0.02 ? "Lower your hips" : "Keep your body straight");
+      } else issues.push("Keep your body straight");
+    }
+  }
+  return { ok:true, ang: ang, issues: issues };
+}
+
+// ---------- Rep logic ----------
+function handleReps(r, c, now) {
+  smAng = smAng === null ? r.ang : 0.4 * r.ang + 0.6 * smAng;
+  var a = smAng;
+  r.issues.forEach(function (i) { repIssues.add(i); noteIssue(i); });
+  if (r.issues.length) { setBanner(r.issues[0], false); speak(r.issues[0]); }
+  minAngle = Math.min(minAngle, a);
+
+  var startS = c.inverted ? "curled" : "down";
+  var enter = c.inverted ? a < c.up : a < c.down;
+  var exit = c.inverted ? a > c.down : a > c.up;
+  if (enter && stage === "up") { stage = startS; stageTime = now; }
+  if (exit && stage === startS) {
+    stage = "up";
+    if (now - lastRepTime > MIN_REP_MS && now - stageTime > 250) { lastRepTime = now; finishRep(c); }
+    else { minAngle = 999; repIssues = new Set(); }
+  }
+}
+
+function finishRep(c) {
+  var penalty = repIssues.size * 15;
+  if (minAngle > c.depthMax) { repIssues.add(c.depthMsg); noteIssue(c.depthMsg); penalty += 20; }
+  var sc = Math.max(0, 100 - penalty);
+  count++; scores.push(sc);
+  $("reps").textContent = count; $("score").textContent = sc;
+  $("kcal").textContent = (count * c.kcal).toFixed(1);
+  drawBars(); checkDegradation();
+  if (repIssues.size) speak(Array.from(repIssues)[0] + ". Rep " + count);
+  else { setBanner("Rep " + count + " ✔ Good form", true); speak("Rep " + count); }
+  minAngle = 999; repIssues = new Set();
+  checkTarget();
+}
+
+function handlePlank(r, dt, now, c) {
+  var good = r.issues.length === 0;
+  winFrames++; if (!good) winBad++;
+  if (good) holdMs += dt;
+  r.issues.forEach(noteIssue);
+  if (!good) { setBanner(r.issues[0], false); speak(r.issues[0]); }
+  else setBanner("Good form – hold! " + Math.floor(holdMs / 1000) + "s", true);
+  var secs = Math.floor(holdMs / 1000);
+  if (secs !== count) { count = secs; $("reps").textContent = count; $("kcal").textContent = (count * c.kcal).toFixed(1); }
+  if (now - winStart >= 5000) {
+    var sc = Math.round(100 * (1 - winBad / Math.max(1, winFrames)));
+    scores.push(sc); $("score").textContent = sc;
+    drawBars(); checkDegradation();
+    winFrames = 0; winBad = 0; winStart = now;
+  }
+  checkTarget();
+}
+
+function checkTarget() {
+  var t = +$("target").value;
+  if (t > 0 && count >= t && !targetHit) {
+    targetHit = true; setBanner("🎯 Target completed!", true);
+    speak("Target completed. Great job!", true);
+  }
+}
+
+function drawBars() {
+  var box = $("bars"); box.innerHTML = "";
+  scores.slice(-20).forEach(function (s) {
+    var d = document.createElement("div");
+    d.className = "bar " + (s >= 80 ? "" : s >= 55 ? "mid" : "low");
+    d.style.height = Math.max(6, s) + "%"; d.title = s;
+    box.appendChild(d);
+  });
+}
+function avgOf(a) { return a.reduce(function (x, y) { return x + y; }, 0) / a.length; }
+function degradeState() {
+  if (scores.length < 4) return false;
+  return avgOf(scores.slice(0, 2)) - avgOf(scores.slice(-2)) >= 15;
+}
+function checkDegradation() {
+  var bad = degradeState();
+  $("degrade").innerHTML = bad
+    ? '<span class="warn">⚠ Form degradation detected – form getting worse due to fatigue</span>'
+    : (scores.length >= 4 ? "✅ Form is stable" : '<span class="mut small">Form trend needs 4+ scores</span>');
+  if (bad && count - lastDegradeAlertRep >= 3) {
+    lastDegradeAlertRep = count;
+    setTimeout(function () { speak("Your form is getting worse. Take a short rest.", true); }, 1500);
+  }
+}
+
+// ---------- Main loop ----------
+function loop() {
+  if (!running) return;
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    var now = Date.now(), dt = lastFrameT ? now - lastFrameT : 0; lastFrameT = now;
+    var res = landmarker.detectForVideo(video, performance.now());
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (res.landmarks && res.landmarks.length) {
+      var lm = res.landmarks[0], c = EX[curEx];
+      var r = analyze(lm, curEx);
+      du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: r.ok && r.issues.length ? "#ff5d5d" : "#4cd37b", lineWidth: 3 });
+      du.drawLandmarks(lm, { color: "#ffffff", radius: 3 });
+      if (!r.ok) setBanner("Full body camera la varura mari nillunga", false);
+      else if (c.timed) handlePlank(r, dt, now, c);
+      else handleReps(r, c, now);
+    }
+    $("time").textContent = Math.round((Date.now() - startTime) / 1000) + "s";
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+// ---------- Start / Finish ----------
+function loadModel() {
+  var p = PoseLandmarker ? Promise.resolve() : import(MP_URL).then(function (mp) {
+    PoseLandmarker = mp.PoseLandmarker; FilesetResolver = mp.FilesetResolver; DrawingUtils = mp.DrawingUtils;
+  });
+  return p.then(function () {
+    du = new DrawingUtils(ctx);
+    return FilesetResolver.forVisionTasks(WASM);
+  }).then(function (fileset) {
+    function mk(d) { return PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: MODEL, delegate: d }, runningMode: "VIDEO", numPoses: 1 }); }
+    return mk("GPU").catch(function () { return mk("CPU"); });
+  }).then(function (lmk) { landmarker = lmk; });
+}
+
+function start() {
+  if (running) return;
+  $("startBtn").disabled = true; setBanner("Loading AI model… (internet venum)", true);
+  var chain = landmarker ? Promise.resolve() : loadModel();
+  chain.then(function () {
+    var facing = $("facing").value;
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+      .then(function (stream) {
+        $("stage").classList.toggle("mirror", facing === "user");
+        video.srcObject = stream;
+        return video.play();
+      });
+  }).then(function () {
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    resetTracking(); resetUI();
+    startTime = Date.now(); running = true; lastVideoTime = -1;
+    lockScreen();
+    setBanner("Ready! Start exercise 💪", true); speak("Ready. Start your exercise.", true);
+    loop();
+  }).catch(function (e) {
+    console.error(e);
+    setBanner("Error: " + (e && e.message ? e.message : e) + " – internet check pannitu retry pannunga", false);
+    $("startBtn").disabled = false;
+  });
+}
+
+function finish() {
+  if (!running) return;
+  running = false; cancelAnimationFrame(rafId); unlockScreen();
+  if (video.srcObject) video.srcObject.getTracks().forEach(function (t) { t.stop(); });
+  video.srcObject = null; ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $("startBtn").disabled = false;
+
+  var c = EX[curEx], dur = Math.round((Date.now() - startTime) / 1000);
+  var avg = scores.length ? Math.round(avgOf(scores)) : 0;
+  var degr = degradeState(), kcal = +(count * c.kcal).toFixed(1);
+  var top = Object.keys(issueCount).sort(function (a, b) { return issueCount[b] - issueCount[a]; })[0];
+  var unit = c.timed ? "s hold" : " reps";
+  var s = $("summary"); s.hidden = false;
+
+  if (count > 0) {
+    var h = store.get("afc_h_" + user, []);
+    h.push({ t: Date.now(), ex: curEx, reps: count, score: avg, dur: dur, deg: degr, kcal: kcal });
+    setHist(h);
+    s.innerHTML = '<h3>Session Summary</h3>' + c.icon + ' <b>' + c.name + '</b><br>' +
+      'Result: <b>' + count + unit + '</b><br>' +
+      'Average form score: <b>' + avg + '/100</b><br>' +
+      'Time: <b>' + dur + 's</b> · ~<b>' + kcal + '</b> kcal<br>' +
+      'Form degradation: <b>' + (degr ? "Yes ⚠" : "No ✅") + '</b><br>' +
+      (top ? 'Top correction: <b>' + top + '</b>' : "Perfect form, no corrections 🎉") +
+      '<p class="mut small" style="margin-bottom:0">Saved to History ✔</p>';
+    setBanner("Session finished 🎉", true);
+    speak("Session finished. " + count + (c.timed ? " seconds" : " reps"), true);
+  } else {
+    s.innerHTML = '<h3>Session Summary</h3>No reps detected, so this session was not saved. Try side view with full body visible.';
+    setBanner("No reps detected", false);
+  }
+}
+
+// ---------- Home ----------
+function streakDays(h) {
+  var days = {}; h.forEach(function (s) { days[new Date(s.t).toDateString()] = 1; });
+  var n = 0, d = new Date();
+  if (!days[d.toDateString()]) d.setDate(d.getDate() - 1);
+  while (days[d.toDateString()]) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function fmtDate(t) { return new Date(t).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
+function sessionRow(s, del) {
+  var c = EX[s.ex];
+  return '<div class="item"><div style="font-size:1.5rem">' + c.icon + '</div>' +
+    '<div style="flex:1"><b>' + c.name + '</b> <span class="badge ' + (s.deg ? "warn" : "") + '">' + (s.deg ? "Fatigue ⚠" : "Stable ✓") + '</span><br>' +
+    '<small class="mut">' + fmtDate(s.t) + ' · ' + s.reps + (c.timed ? "s hold" : " reps") + ' · score ' + s.score + ' · ' + s.dur + 's</small></div>' +
+    (del ? '<button class="icon-btn" data-del="' + s.t + '">🗑</button>' : "") + '</div>';
+}
+function renderHome() {
+  var p = profile(), h = hist();
+  $("hello").textContent = "Hi, " + p.name + " 👋";
+  var reps = h.filter(function (s) { return !EX[s.ex].timed; }).reduce(function (a, s) { return a + s.reps; }, 0);
+  $("sSessions").textContent = h.length;
+  $("sReps").textContent = reps;
+  $("sAvg").textContent = h.length ? Math.round(h.reduce(function (a, s) { return a + s.score; }, 0) / h.length) : "--";
+  $("sStreak").textContent = streakDays(h);
+  var today = new Date().toDateString();
+  var tr = h.filter(function (s) { return !EX[s.ex].timed && new Date(s.t).toDateString() === today; }).reduce(function (a, s) { return a + s.reps; }, 0);
+  var goal = p.goal || 30;
+  $("goalBar").style.width = Math.min(100, Math.round(tr / goal * 100)) + "%";
+  $("goalTxt").textContent = tr + " / " + goal + " reps today" + (tr >= goal ? " 🎉" : "");
+  $("goalInput").value = goal;
+  var rec = h.slice(-3).reverse();
+  $("recent").innerHTML = rec.length ? rec.map(function (s) { return sessionRow(s, false); }).join("") : '<p class="mut small">No sessions yet. Start your first workout 💪</p>';
+}
+$("goalInput").addEventListener("change", function () {
+  var p = profile(); p.goal = Math.max(5, Math.min(500, +$("goalInput").value || 30));
+  store.set("afc_p_" + user, p); renderHome();
+});
+
+// ---------- History ----------
+function renderHistory() {
+  var h = hist().slice().reverse();
+  $("histList").innerHTML = h.length ? h.map(function (s) { return sessionRow(s, true); }).join("") : '<p class="mut small">No sessions yet.</p>';
+}
+$("histList").addEventListener("click", function (e) {
+  var b = e.target.closest("[data-del]"); if (!b) return;
+  setHist(store.get("afc_h_" + user, []).filter(function (s) { return String(s.t) !== b.dataset.del; }));
+  renderHistory();
+});
+$("clearBtn").addEventListener("click", function () { if (confirm("Delete all workout history?")) { setHist([]); renderHistory(); } });
+$("csvBtn").addEventListener("click", function () {
+  var h = hist();
+  if (!h.length) { alert("No data to export yet"); return; }
+  var rows = ["date,exercise,reps_or_seconds,score,duration_s,fatigue,kcal"].concat(h.map(function (s) {
+    return [new Date(s.t).toISOString(), EX[s.ex].name, s.reps, s.score, s.dur, s.deg ? "yes" : "no", s.kcal].join(",");
+  }));
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
+  a.download = "fitform-history.csv"; a.click();
+});
+
+// ---------- Progress ----------
+function lineChart(vals) {
+  if (vals.length < 2) return '<p class="mut small">Do at least 2 sessions to see your trend.</p>';
+  var W = 320, H = 130, p = 22, step = (W - 2 * p) / (vals.length - 1);
+  var pts = vals.map(function (v, i) { return [p + i * step, H - p - (v / 100) * (H - 2 * p)]; });
+  var grid = [0, 50, 100].map(function (g) {
+    var y = H - p - (g / 100) * (H - 2 * p);
+    return '<line x1="' + p + '" x2="' + (W - p) + '" y1="' + y + '" y2="' + y + '" style="stroke:var(--line)"/><text x="0" y="' + (y + 3) + '" font-size="9" style="fill:var(--mut)">' + g + '</text>';
+  }).join("");
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + grid +
+    '<polyline points="' + pts.map(function (q) { return q.join(","); }).join(" ") + '" fill="none" stroke-width="2.5" style="stroke:var(--gold)"/>' +
+    pts.map(function (q) { return '<circle cx="' + q[0] + '" cy="' + q[1] + '" r="3.5" style="fill:var(--gold)"/>'; }).join("") + '</svg>';
+}
+function barChart(h, incl) {
+  var days = []; for (var i = 6; i >= 0; i--) { var d = new Date(); d.setDate(d.getDate() - i); days.push(d); }
+  var vals = days.map(function (d) {
+    return h.filter(function (s) { return incl(s) && new Date(s.t).toDateString() === d.toDateString(); }).reduce(function (a, s) { return a + s.reps; }, 0);
+  });
+  var W = 320, H = 130, bw = 28, gap = (W - 7 * bw) / 8, max = Math.max.apply(null, [10].concat(vals));
+  var L = ["S", "M", "T", "W", "T", "F", "S"];
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '">' + vals.map(function (v, i) {
+    var x = gap + i * (bw + gap), ht = v / max * (H - 40), y = H - 20 - ht;
+    return '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + ht + '" rx="5" style="fill:var(--gold)"/>' +
+      '<text x="' + (x + bw / 2) + '" y="' + (y - 4) + '" font-size="10" text-anchor="middle" style="fill:var(--txt)">' + (v || "") + '</text>' +
+      '<text x="' + (x + bw / 2) + '" y="' + (H - 5) + '" font-size="10" text-anchor="middle" style="fill:var(--mut)">' + L[days[i].getDay()] + '</text>';
+  }).join("") + "</svg>";
+}
+function renderProgress() {
+  var f = $("progEx").value;
+  var all = hist(), h = f === "all" ? all : all.filter(function (s) { return s.ex === f; });
+  $("pSessions").textContent = h.length;
+  $("pBest").textContent = h.length ? Math.max.apply(null, h.map(function (s) { return s.score; })) : "--";
+  $("pMax").textContent = h.length ? Math.max.apply(null, h.map(function (s) { return s.reps; })) : "--";
+  $("chartScore").innerHTML = lineChart(h.slice(-10).map(function (s) { return s.score; }));
+  $("chartReps").innerHTML = barChart(all, function (s) { return f === "all" ? !EX[s.ex].timed : s.ex === f; });
+}
+$("progEx").addEventListener("change", renderProgress);
+
+// ---------- Buttons + boot ----------
+$("startBtn").addEventListener("click", start);
+$("finishBtn").addEventListener("click", finish);
+
+buildExUI();
+var saved = store.get("afc_session", null);
+if (saved && (saved === "guest" || store.get("afc_users", {})[saved])) enterApp(saved);
+
+var st = $("jsStatus");
+st.textContent = "v6 · ✅ app ready";
+st.style.color = "#1fa95b";
+})();
+</script>
+</body>
+</html>
